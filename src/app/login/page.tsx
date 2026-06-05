@@ -39,7 +39,7 @@ export default function LoginPage() {
             Run your trading operations with confidence.
           </h2>
           <p className="text-brand-100 mt-3 text-sm leading-relaxed">
-            Issue delivery orders, track shipments, manage inventory and bill customers — all from one place.
+            Issue delivery orders, manage inventory and bill customers — all from one place.
           </p>
         </div>
         <div className="text-xs text-brand-200">
@@ -75,11 +75,7 @@ export default function LoginPage() {
             </Button>
           </div>
 
-          <div className="mt-6 text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-md p-3">
-            <div className="font-medium text-slate-700 mb-1">Demo accounts</div>
-            <div>admin@irmaan.co · any password</div>
-            <div>sales@irmaan.co · any password</div>
-          </div>
+
         </form>
       </div>
     </div>
