@@ -1,0 +1,180 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── helpers ───────────────────────────────────────────────────────────
+    function isSignedIn() { return request.auth != null; }
+    function userRole()   { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role; }
+    function isActive()   { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true; }
+    function hasRole(roles) { return isSignedIn() && isActive() && roles.hasAny([userRole()]); }
+
+    function isString(v) { return v is string && v.size() > 0; }
+    function isNonNeg(v) { return v is number && v >= 0; }
+    function isPositive(v) { return v is number && v > 0; }
+
+    // ── users ─────────────────────────────────────────────────────────────
+    match /users/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || hasRole(['admin']));
+      allow create, update: if hasRole(['admin'])
+                            && isString(request.resource.data.email)
+                            && isString(request.resource.data.displayName)
+                            && request.resource.data.role in ['admin','manager','sales','warehouse']
+                            && request.resource.data.active is bool;
+      allow delete: if hasRole(['admin']);
+    }
+
+    // ── customers ────────────────────────────────────────────────────────
+    match /customers/{id} {
+      allow read:   if isSignedIn() && isActive();
+      allow create: if hasRole(['admin','manager','sales'])
+                    && isString(request.resource.data.name)
+                    && isString(request.resource.data.phone)
+                    && isString(request.resource.data.address)
+                    && request.resource.data.balance is number;
+      allow update: if hasRole(['admin','manager','sales']);
+      allow delete: if hasRole(['admin']);
+    }
+
+    // ── suppliers ────────────────────────────────────────────────────────
+    match /suppliers/{id} {
+      allow read:   if isSignedIn() && isActive();
+      allow create: if hasRole(['admin','manager'])
+                    && isString(request.resource.data.name)
+                    && isString(request.resource.data.phone)
+                    && isString(request.resource.data.address)
+                    && request.resource.data.balance is number;
+      allow update: if hasRole(['admin','manager']);
+      allow delete: if hasRole(['admin']);
+    }
+
+    match /supplier_payments/{id} {
+      allow read:   if isSignedIn() && isActive();
+      allow create: if hasRole(['admin','manager'])
+                    && isPositive(request.resource.data.amount)
+                    && isString(request.resource.data.purchaseOrderId)
+                    && request.resource.data.method in ['cash','bank','mobile_money','cheque'];
+      allow update, delete: if hasRole(['admin']); // append-only
+    }
+
+    // ── products ─────────────────────────────────────────────────────────
+    match /products/{id} {
+      allow read:   if isSignedIn() && isActive();
+      allow create: if hasRole(['admin','manager','warehouse'])
+                    && isString(request.resource.data.name)
+                    && isString(request.resource.data.unit)
+                    && isNonNeg(request.resource.data.stock)
+                    && isNonNeg(request.resource.data.unitPrice);
+      allow update: if hasRole(['admin','manager','warehouse'])
+                    && isNonNeg(request.resource.data.stock)
+                    && isNonNeg(request.resource.data.unitPrice);
+      allow delete: if hasRole(['admin']);
+    }
+
+    // ── delivery_orders ──────────────────────────────────────────────────
+    match /delivery_orders/{id} {
+      allow read:   if isSignedIn() && isActive();
+      // doNumber must only be set by Cloud Function (server). Reject if client tries.
+      allow create: if hasRole(['admin','manager','sales','warehouse'])
+                    && !('doNumber' in request.resource.data)
+                    && request.resource.data.status in ['draft','issued']
+                    && isString(request.resource.data.customerId)
+                    && request.resource.data.items.size() > 0;
+      // Existing doc's doNumber must not change after creation
+      allow update: if hasRole(['admin','manager','sales','warehouse'])
+                    && (
+                      !('doNumber' in resource.data) ||
+                      request.resource.data.doNumber == resource.data.doNumber
+                    )
+                    && request.resource.data.status in ['draft','issued','delivered','cancelled'];
+      allow delete: if hasRole(['admin']);
+    }
+
+    // ── purchase_orders ──────────────────────────────────────────────────
+    match /purchase_orders/{id} {
+      allow read:   if isSignedIn() && isActive();
+      allow create: if hasRole(['admin','manager'])
+                    && !('poNumber' in request.resource.data)
+                    && request.resource.data.status in ['draft','sent']
+                    && isString(request.resource.data.supplierId)
+                    && request.resource.data.items.size() > 0
+                    && isNonNeg(request.resource.data.total);
+      allow update: if hasRole(['admin','manager','warehouse'])
+                    && (
+                      !('poNumber' in resource.data) ||
+                      request.resource.data.poNumber == resource.data.poNumber
+                    )
+                    && request.resource.data.status in ['draft','sent','partial_received','received','cancelled']
+                    && isNonNeg(request.resource.data.amountPaid);
+      allow delete: if hasRole(['admin']);
+    }
+
+    // ── invoices ─────────────────────────────────────────────────────────
+    match /invoices/{id} {
+      allow read:   if isSignedIn() && isActive();
+      allow create: if hasRole(['admin','manager','sales'])
+                    && !('invoiceNumber' in request.resource.data)
+                    && isString(request.resource.data.customerId)
+                    && request.resource.data.items.size() > 0
+                    && isNonNeg(request.resource.data.total)
+                    && isNonNeg(request.resource.data.subtotal)
+                    && request.resource.data.taxRate is number
+                    && request.resource.data.taxRate >= 0
+                    && request.resource.data.taxRate <= 1
+                    // Sanity check: total should ≈ subtotal + taxAmount
+                    && (request.resource.data.total - (request.resource.data.subtotal + request.resource.data.taxAmount)) < 0.02
+                    && (request.resource.data.total - (request.resource.data.subtotal + request.resource.data.taxAmount)) > -0.02;
+      allow update: if hasRole(['admin','manager','sales'])
+                    && (
+                      !('invoiceNumber' in resource.data) ||
+                      request.resource.data.invoiceNumber == resource.data.invoiceNumber
+                    )
+                    && request.resource.data.status in ['draft','sent','partial','paid','overdue','cancelled']
+                    && isNonNeg(request.resource.data.amountPaid)
+                    // Amount paid can never exceed total
+                    && request.resource.data.amountPaid <= request.resource.data.total + 0.01;
+      allow delete: if hasRole(['admin']);
+    }
+
+    match /payments/{id} {
+      allow read:   if isSignedIn() && isActive();
+      allow create: if hasRole(['admin','manager'])
+                    && isPositive(request.resource.data.amount)
+                    && isString(request.resource.data.invoiceId)
+                    && request.resource.data.method in ['cash','bank','mobile_money','cheque'];
+      allow update, delete: if hasRole(['admin']); // payments are append-only
+    }
+
+    // ── stock movements (audit trail, append-only) ───────────────────────
+    match /stock_movements/{id} {
+      allow read:   if isSignedIn() && isActive();
+      allow create: if hasRole(['admin','manager','warehouse'])
+                    && request.resource.data.qty is number
+                    && isString(request.resource.data.productId)
+                    && request.resource.data.kind in [
+                      'po_receipt','po_receipt_reverse',
+                      'do_issue','do_cancel',
+                      'adjustment_in','adjustment_out','opening_balance'
+                    ];
+      allow update, delete: if false; // append-only — never edit history
+    }
+
+    // ── activity log (append-only audit) ─────────────────────────────────
+    match /activity_logs/{id} {
+      allow read:   if hasRole(['admin','manager']);
+      allow create: if isSignedIn() && isActive()
+                    && isString(request.resource.data.actorUid)
+                    && isString(request.resource.data.action)
+                    && isString(request.resource.data.entityType)
+                    && isString(request.resource.data.entityId)
+                    && isString(request.resource.data.summary);
+      allow update, delete: if false; // append-only — never edit history
+    }
+
+    // ── counters (server-only writes) ────────────────────────────────────
+    match /counters/{name} {
+      allow read:  if isSignedIn();
+      allow write: if false; // only Cloud Functions can mutate
+    }
+  }
+}

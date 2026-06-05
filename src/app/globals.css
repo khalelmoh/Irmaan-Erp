@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 0 0% 100%;
+  --foreground: 222 47% 11%;
+  --border: 220 13% 91%;
+  --muted: 210 40% 96%;
+  --muted-foreground: 215 16% 47%;
+  --primary: 222 89% 41%;
+  --primary-foreground: 0 0% 100%;
+}
+
+html, body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-feature-settings: "rlig" 1, "calt" 1;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ─── Print styles ────────────────────────────────────────────────────────── */
+@media print {
+  @page { size: A4; margin: 12mm; }
+  body { background: white !important; }
+  .no-print { display: none !important; }
+  .print-page { box-shadow: none !important; border: none !important; padding: 0 !important; }
+
+  /* Report pages: drop card shadows + flatten background for clean print */
+  .report-content .shadow-card { box-shadow: none !important; }
+  .report-content .rounded-lg { border-radius: 4px !important; }
+  /* Recharts uses SVG which prints fine, but force its container to keep height */
+  .recharts-responsive-container { page-break-inside: avoid; }
+}
+
+.print-page {
+  width: 210mm;
+  min-height: 297mm;
+  margin: 0 auto;
+  background: white;
+  padding: 14mm 14mm;
+  box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 2px 12px rgba(0,0,0,.04);
+}
+
+/* Subtle table polish */
+.doc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.doc-table th, .doc-table td {
+  border: 1px solid #d1d5db;
+  padding: 8px 10px;
+  text-align: left;
+}
+.doc-table thead th {
+  background: #1e3a8a;
+  color: white;
+  font-weight: 600;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  font-size: 11px;
+}
+
+/* Toast animations (referenced by ToastContext) */
+@keyframes slide-in-from-right-4 {
+  from { transform: translateX(1rem); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.animate-in { animation-duration: .2s; animation-timing-function: ease-out; animation-fill-mode: both; }
+.slide-in-from-right-4 { animation-name: slide-in-from-right-4; }
+.fade-in { animation-name: fade-in; }
+.duration-200 { animation-duration: .2s; }
+
+/* Command palette / dialog backdrop blur fallback */
+.cmdk-overlay { backdrop-filter: blur(4px); }

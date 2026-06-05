@@ -1,0 +1,15 @@
+node_modules
+.next
+.env.local
+.env*.local
+lib
+*.log
+.DS_Store
+
+# Service account credentials — NEVER commit these
+service-account.json
+serviceAccountKey.json
+firebase-adminsdk-*.json
+
+# Local backups
+backups/
