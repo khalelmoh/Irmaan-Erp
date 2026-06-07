@@ -12,3 +12,5 @@ firebase-adminsdk-*.json
 
 # Local backups
 backups/
+
+.vercel

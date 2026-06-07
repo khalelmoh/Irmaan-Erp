@@ -22,7 +22,7 @@ import type { PurchaseOrder, POStatus } from "@/types";
 export default function POListPage() {
   const toast = useToast();
   const [list, setList] = useState<PurchaseOrder[]>([]);
-  const [status, setStatus] = useState<"all" | POStatus>("all");
+  const [status, setStatus] = useState<"all" | POStatus | "pending_receipt">("all");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
