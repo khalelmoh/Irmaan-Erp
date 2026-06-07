@@ -67,9 +67,9 @@ export default function SOListPage() {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <Kpi label="Total Confirmed Sales" value={currency(stats.totalSales)} icon={DollarSign} color="text-brand-700 bg-brand-50" />
-        <Kpi label="Quotations" value={stats.quotations} icon={FileText} color="text-slate-700 bg-slate-100" />
-        <Kpi label="Pending Delivery" value={stats.pendingDelivery} icon={Target} color="text-amber-700 bg-amber-50" />
-        <Kpi label="Fully Delivered" value={stats.fullyDelivered} icon={CheckCircle2} color="text-emerald-700 bg-emerald-50" />
+        <Kpi label="Quotations" value={stats.quotations} icon={FileText} color="text-slate-700 bg-slate-100" active={status === "quotation"} onClick={() => setStatus(status === "quotation" ? "all" : "quotation")} />
+        <Kpi label="Pending Delivery" value={stats.pendingDelivery} icon={Target} color="text-amber-700 bg-amber-50" active={status === "confirmed"} onClick={() => setStatus(status === "confirmed" ? "all" : "confirmed")} />
+        <Kpi label="Fully Delivered" value={stats.fullyDelivered} icon={CheckCircle2} color="text-emerald-700 bg-emerald-50" active={status === "fully_delivered"} onClick={() => setStatus(status === "fully_delivered" ? "all" : "fully_delivered")} />
       </div>
 
       <Card>
@@ -157,9 +157,15 @@ export default function SOListPage() {
   );
 }
 
-function Kpi({ label, value, icon: Icon, color }: { label: string; value: string | number; icon: typeof DollarSign; color: string }) {
+function Kpi({ label, value, icon: Icon, color, active, onClick }: { label: string; value: string | number; icon: typeof DollarSign; color: string; active?: boolean; onClick?: () => void }) {
   return (
-    <Card>
+    <Card
+      className={[
+        onClick ? "cursor-pointer select-none transition-shadow hover:shadow-md" : "",
+        active ? "ring-2 ring-brand-500 ring-offset-2" : "",
+      ].join(" ")}
+      onClick={onClick}
+    >
       <div className="p-5 flex items-center justify-between">
         <div>
           <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>

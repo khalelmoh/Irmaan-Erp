@@ -6,7 +6,7 @@ export const seedUsers: User[] = [
   {
     uid: "u_admin",
     email: "admin@irmaan.co",
-    displayName: "Amina Yusuf",
+    displayName: "Khalel Mohamed",
     role: "admin",
     active: true,
     createdAt: now,

@@ -32,7 +32,11 @@ export default function POListPage() {
   }, [toast]);
 
   const filterFn = useCallback(
-    (p: PurchaseOrder) => status === "all" || p.status === status,
+    (p: PurchaseOrder) => {
+      if (status === "all") return true;
+      if (status === "pending_receipt") return p.status === "sent" || p.status === "partial_received";
+      return p.status === status;
+    },
     [status],
   );
 
@@ -68,8 +72,8 @@ export default function POListPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <Kpi label="Total ordered" value={currency(stats.totalOrdered)} icon={ShoppingCart} color="text-brand-700 bg-brand-50" />
         <Kpi label="Outstanding (A/P)" value={currency(stats.totalAP)} icon={DollarSign} color="text-red-700 bg-red-50" />
-        <Kpi label="Awaiting receipt" value={stats.pendingReceipts} icon={Truck} color="text-amber-700 bg-amber-50" />
-        <Kpi label="Drafts" value={stats.draft} icon={AlertCircle} color="text-slate-700 bg-slate-100" />
+        <Kpi label="Awaiting receipt" value={stats.pendingReceipts} icon={Truck} color="text-amber-700 bg-amber-50" active={status === "pending_receipt"} onClick={() => setStatus(status === "pending_receipt" ? "all" : "pending_receipt" as never)} />
+        <Kpi label="Drafts" value={stats.draft} icon={AlertCircle} color="text-slate-700 bg-slate-100" active={status === "draft"} onClick={() => setStatus(status === "draft" ? "all" : "draft")} />
       </div>
 
       <Card>
@@ -151,9 +155,15 @@ export default function POListPage() {
   );
 }
 
-function Kpi({ label, value, icon: Icon, color }: { label: string; value: string | number; icon: typeof DollarSign; color: string }) {
+function Kpi({ label, value, icon: Icon, color, active, onClick }: { label: string; value: string | number; icon: typeof DollarSign; color: string; active?: boolean; onClick?: () => void }) {
   return (
-    <Card>
+    <Card
+      className={[
+        onClick ? "cursor-pointer select-none transition-shadow hover:shadow-md" : "",
+        active ? "ring-2 ring-brand-500 ring-offset-2" : "",
+      ].join(" ")}
+      onClick={onClick}
+    >
       <div className="p-5 flex items-center justify-between">
         <div>
           <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>

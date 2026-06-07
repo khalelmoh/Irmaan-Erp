@@ -31,9 +31,9 @@ import {
 import { padNumber } from "@/lib/utils";
 
 // ─── persistence ───────────────────────────────────────────────────────────
-// v9: Fix seed timing issue for allocatedQty
+// v10: Change admin user name to Khalel Mohamed
 // Bumping the key triggers a clean reseed for users on older versions.
-const KEY = "irmaan-erp:v9";
+const KEY = "irmaan-erp:v10";
 
 const DEFAULT_SETTINGS: CompanySettings = {
   companyName: "Irmaan Trading & Logistics",

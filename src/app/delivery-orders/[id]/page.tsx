@@ -161,7 +161,7 @@ export default function DOViewPage() {
           <Button variant="outline" onClick={() => window.print()}>
             <Printer className="h-4 w-4" /> Print
           </Button>
-          <PDFDownloadButton doc={doc} qrDataUrl={qrDataUrl} />
+          <PDFDownloadButton doc={doc} qrDataUrl={qrDataUrl} allocations={allocations} />
         </div>
       </div>
 
@@ -175,7 +175,7 @@ export default function DOViewPage() {
         </div>
       )}
 
-      <DOPrintView doc={doc} verifyUrl={verifyUrl} />
+      <DOPrintView doc={doc} verifyUrl={verifyUrl} allocations={allocations} />
 
       {/* PO Allocation Detail */}
       {allocations.length > 0 && (

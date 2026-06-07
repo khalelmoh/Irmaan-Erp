@@ -29,10 +29,10 @@ export const padNumber = (n: number, width = 5) =>
 
 export const COMPANY = {
   name: "Irmaan Trading Company",
-  tagline: "Trading · Distribution · Freight",
-  address: "Industrial Road, Block 4, Berbera",
-  phone: "+252 63 4442453",
-  email: "ops@irmaan-trading.co",
-  website: "www.irmaan-trading.co",
+  tagline: "Trading · Distribution",
+  address: "Berbera, Somaliland",
+  phone: "063 4446433 / 063 4446784 / 063 4449000",
+  email: "info@irmaantrading.com",
+  website: "www.irmaantrading.com",
   taxId: "TIN-7741200",
 };

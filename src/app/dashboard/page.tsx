@@ -118,8 +118,8 @@ export default function DashboardPage() {
         <SmallStat label="Customers" value={customers.length} icon={Users} />
         <SmallStat label="Suppliers" value={suppliers.length} icon={Building2} />
         <SmallStat label="Products" value={products.length} icon={Package} />
-        <SmallStat label="Pending deliveries" value={stats.pendingDeliveries} icon={Truck} highlight={stats.pendingDeliveries > 0} />
-        <SmallStat label="Awaiting receipt" value={stats.pendingReceipts} icon={ShoppingCart} highlight={stats.pendingReceipts > 0} />
+        <SmallStat label="Pending deliveries" value={stats.pendingDeliveries} icon={Truck} highlight={stats.pendingDeliveries > 0} href="/delivery-orders" />
+        <SmallStat label="Awaiting receipt" value={stats.pendingReceipts} icon={ShoppingCart} highlight={stats.pendingReceipts > 0} href="/purchase-orders" />
       </div>
 
       <div className="grid lg:grid-cols-2 gap-4">
@@ -204,9 +204,9 @@ export default function DashboardPage() {
   );
 }
 
-function SmallStat({ label, value, icon: Icon, highlight }: { label: string; value: number; icon: typeof Users; highlight?: boolean }) {
-  return (
-    <Card>
+function SmallStat({ label, value, icon: Icon, highlight, href }: { label: string; value: number; icon: typeof Users; highlight?: boolean; href?: string }) {
+  const card = (
+    <Card className={href ? "cursor-pointer select-none transition-shadow hover:shadow-md hover:border-brand-300" : ""}>
       <CardContent className="flex items-center justify-between py-4">
         <div>
           <div className="text-[11px] uppercase tracking-wide text-slate-500">{label}</div>
@@ -216,4 +216,5 @@ function SmallStat({ label, value, icon: Icon, highlight }: { label: string; val
       </CardContent>
     </Card>
   );
+  return href ? <Link href={href}>{card}</Link> : card;
 }

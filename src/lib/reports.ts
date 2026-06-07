@@ -63,14 +63,16 @@ export const presetRanges = () => {
 // ─── Sales ────────────────────────────────────────────────────────────────
 export function salesSummary(invoices: Invoice[], payments: Payment[], r: DateRange) {
   const inv = invoices.filter((i) => inRange(i.issueDate, r) && i.status !== "cancelled");
-  const billed = inv.reduce((s, i) => s + i.total, 0);
+  const regularInv = inv.filter((i) => i.type !== "credit_note");
+  const creditNotes = inv.filter((i) => i.type === "credit_note");
+  const billed = regularInv.reduce((s, i) => s + i.total, 0) - creditNotes.reduce((s, i) => s + i.total, 0);
   const pay = payments.filter((p) => inRange(p.paidAt, r));
   const collected = pay.reduce((s, p) => s + p.amount, 0);
   return {
     billed: round2(billed),
     collected: round2(collected),
-    invoiceCount: inv.length,
-    avgInvoice: inv.length ? round2(billed / inv.length) : 0,
+    invoiceCount: regularInv.length,
+    avgInvoice: regularInv.length ? round2(billed / regularInv.length) : 0,
   };
 }
 
@@ -80,7 +82,10 @@ export function salesByMonth(invoices: Invoice[], payments: Payment[], r: DateRa
   invoices.forEach((i) => {
     if (i.status === "cancelled" || !inRange(i.issueDate, r)) return;
     const k = monthKey(i.issueDate);
-    if (buckets[k]) buckets[k].billed += i.total;
+    if (buckets[k]) {
+      // Credit notes reduce billed; regular invoices add to it
+      buckets[k].billed += i.type === "credit_note" ? -i.total : i.total;
+    }
   });
   payments.forEach((p) => {
     if (!inRange(p.paidAt, r)) return;
@@ -101,9 +106,10 @@ export function topCustomers(invoices: Invoice[], customers: Customer[], r: Date
       const c = customers.find((x) => x.id === key);
       map[key] = { customerId: key, name: c?.name ?? i.customerSnapshot.name, billed: 0, outstanding: 0, count: 0 };
     }
-    map[key].billed += i.total;
-    map[key].outstanding += outstanding(i);
-    map[key].count += 1;
+    const sign = i.type === "credit_note" ? -1 : 1;
+    map[key].billed += sign * i.total;
+    map[key].outstanding += sign * outstanding(i);
+    map[key].count += i.type === "credit_note" ? 0 : 1;
   });
   return Object.values(map)
     .map((x) => ({ ...x, billed: round2(x.billed), outstanding: round2(x.outstanding) }))
@@ -121,8 +127,12 @@ export interface AgingBucket {
 /** Aging buckets based on dueDate. Negative days = not yet due. */
 export function arAging(invoices: Invoice[]): AgingBucket[] {
   const open = invoices.filter((i) => {
+    // Credit notes are liabilities, not receivables — exclude them
+    if (i.type === "credit_note") return false;
     const st = effectiveStatus(i);
-    return st !== "cancelled" && st !== "draft" && st !== "paid";
+    if (st === "cancelled" || st === "draft" || st === "paid") return false;
+    // Safety: skip if already fully paid (stale status edge case)
+    return outstanding(i) > 0.001;
   });
   const now = Date.now();
   const buckets: AgingBucket[] = [
@@ -150,7 +160,8 @@ export function arAging(invoices: Invoice[]): AgingBucket[] {
 
 // ─── Purchases ───────────────────────────────────────────────────────────
 export function purchaseSummary(pos: PurchaseOrder[], supplierPays: SupplierPayment[], r: DateRange) {
-  const filt = pos.filter((p) => inRange(p.orderDate, r) && p.status !== "cancelled");
+  // Exclude both cancelled and draft POs — drafts aren't committed spend
+  const filt = pos.filter((p) => inRange(p.orderDate, r) && p.status !== "cancelled" && p.status !== "draft");
   const ordered = filt.reduce((s, p) => s + p.total, 0);
   const paid = supplierPays.filter((p) => inRange(p.paidAt, r)).reduce((s, p) => s + p.amount, 0);
   return {
@@ -262,13 +273,15 @@ export function profitByProduct(invoices: Invoice[], products: Product[], r: Dat
   const map: Record<string, { productId: string; name: string; qty: number; revenue: number; cost: number }> = {};
   invoices.forEach((inv) => {
     if (inv.status === "cancelled" || !inRange(inv.issueDate, r)) return;
+    // Credit notes represent returned goods — subtract from revenue and qty
+    const sign = inv.type === "credit_note" ? -1 : 1;
     inv.items.forEach((it) => {
       if (!map[it.productId]) {
         const p = products.find((x) => x.id === it.productId);
         map[it.productId] = { productId: it.productId, name: it.name, qty: 0, revenue: 0, cost: (p?.cost ?? 0) };
       }
-      map[it.productId].qty += it.quantity;
-      map[it.productId].revenue += it.lineTotal;
+      map[it.productId].qty += sign * it.quantity;
+      map[it.productId].revenue += sign * it.lineTotal;
     });
   });
   return Object.values(map)

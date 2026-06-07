@@ -19,7 +19,7 @@ import {
   Stop,
 } from "@react-pdf/renderer";
 import { COMPANY, formatDate } from "@/lib/utils";
-import type { DeliveryOrder } from "@/types";
+import type { DeliveryOrder, POAllocation } from "@/types";
 
 const s = StyleSheet.create({
   page: { padding: 36, fontSize: 10, fontFamily: "Helvetica", color: "#0f172a" },
@@ -57,9 +57,14 @@ const s = StyleSheet.create({
   signLabel: { fontSize: 8, color: "#64748b", marginTop: 4, letterSpacing: 1 },
   signName: { fontSize: 10, fontWeight: 700 },
   footer: { marginTop: 24, paddingTop: 8, borderTop: "1 solid #e2e8f0", fontSize: 8, color: "#64748b", flexDirection: "row", justifyContent: "space-between" },
+  poTitle: { fontSize: 8, color: "#64748b", letterSpacing: 1, marginTop: 14, marginBottom: 4, fontWeight: 700 },
+  poThead: { flexDirection: "row", backgroundColor: "#f1f5f9" },
+  poTh: { padding: 6, fontSize: 8, fontWeight: 700, color: "#334155", textTransform: "uppercase" },
+  poTr: { flexDirection: "row", borderTop: "1 solid #e2e8f0" },
+  poTd: { padding: 6, fontSize: 9 },
 });
 
-export function DOPdfDocument({ doc, qrDataUrl }: { doc: DeliveryOrder; qrDataUrl?: string }) {
+export function DOPdfDocument({ doc, qrDataUrl, allocations }: { doc: DeliveryOrder; qrDataUrl?: string; allocations?: POAllocation[] }) {
   return (
     <Document title={doc.doNumber} author={COMPANY.name}>
       <Page size="A4" style={s.page}>
@@ -129,6 +134,27 @@ export function DOPdfDocument({ doc, qrDataUrl }: { doc: DeliveryOrder; qrDataUr
             </View>
           ))}
         </View>
+
+        {/* Purchase Order References */}
+        {allocations && allocations.length > 0 && (
+          <>
+            <Text style={s.poTitle}>PURCHASE ORDER REFERENCES</Text>
+            <View style={{ border: "1 solid #cbd5e1" }}>
+              <View style={s.poThead}>
+                <Text style={[s.poTh, { width: "30%" }]}>PO NUMBER</Text>
+                <Text style={[s.poTh, { flex: 1 }]}>PRODUCT</Text>
+                <Text style={[s.poTh, { width: "20%", textAlign: "right" }]}>QTY ALLOCATED</Text>
+              </View>
+              {allocations.map((a, i) => (
+                <View key={i} style={s.poTr}>
+                  <Text style={[s.poTd, { width: "30%", fontWeight: 700, color: "#1e3a8a" }]}>{a.poNumber}</Text>
+                  <Text style={[s.poTd, { flex: 1 }]}>{a.productName}</Text>
+                  <Text style={[s.poTd, { width: "20%", textAlign: "right" }]}>{a.quantity.toLocaleString()}</Text>
+                </View>
+              ))}
+            </View>
+          </>
+        )}
 
         {/* Loading */}
         <Text style={s.loadingTitle}>LOADING DETAILS</Text>

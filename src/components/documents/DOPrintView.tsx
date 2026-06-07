@@ -3,15 +3,17 @@
 import { COMPANY, formatDate } from "@/lib/utils";
 import { QRBlock } from "./QRBlock";
 import { Logo } from "@/components/layout/Logo";
-import type { DeliveryOrder } from "@/types";
+import type { DeliveryOrder, POAllocation } from "@/types";
 
 interface Props {
   doc: DeliveryOrder;
   /** Public URL the QR should encode. */
   verifyUrl: string;
+  /** PO allocations to show on the document. */
+  allocations?: POAllocation[];
 }
 
-export function DOPrintView({ doc, verifyUrl }: Props) {
+export function DOPrintView({ doc, verifyUrl, allocations }: Props) {
   return (
     <div className="print-page text-slate-900">
       {/* Header */}
@@ -83,6 +85,31 @@ export function DOPrintView({ doc, verifyUrl }: Props) {
           </tbody>
         </table>
       </section>
+
+      {/* Purchase Order References */}
+      {allocations && allocations.length > 0 && (
+        <section className="mt-5">
+          <div className="text-[10px] uppercase tracking-wider text-slate-500 mb-2 font-semibold">Purchase Order References</div>
+          <table className="doc-table">
+            <thead>
+              <tr>
+                <th style={{ width: 160 }}>PO Number</th>
+                <th>Product</th>
+                <th style={{ width: 120 }} className="!text-right">Qty Allocated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {allocations.map((a, i) => (
+                <tr key={i}>
+                  <td className="font-mono font-semibold text-brand-800">{a.poNumber}</td>
+                  <td>{a.productName}</td>
+                  <td className="text-right tabular-nums">{a.quantity.toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
 
       {/* Loading details */}
       <section className="mt-5">
