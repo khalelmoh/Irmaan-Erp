@@ -33,7 +33,9 @@ export default function LoginPage() {
     <div className="min-h-screen grid lg:grid-cols-2">
       {/* Left brand panel */}
       <div className="hidden lg:flex flex-col justify-between bg-gradient-to-br from-brand-800 to-brand-950 text-white p-12">
-        <Logo />
+        <div className="bg-white p-4 rounded-2xl shadow-md w-fit">
+          <Logo />
+        </div>
         <div className="max-w-md">
           <h2 className="text-3xl font-semibold leading-tight">
             Run your trading operations with confidence.

@@ -35,7 +35,9 @@ export default function ForgotPasswordPage() {
   return (
     <div className="min-h-screen grid lg:grid-cols-2">
       <div className="hidden lg:flex flex-col justify-between bg-gradient-to-br from-brand-800 to-brand-950 text-white p-12">
-        <Logo />
+        <div className="bg-white p-4 rounded-2xl shadow-md w-fit">
+          <Logo />
+        </div>
         <div className="max-w-md">
           <h2 className="text-3xl font-semibold leading-tight">Forgot your password?</h2>
           <p className="text-brand-100 mt-3 text-sm leading-relaxed">

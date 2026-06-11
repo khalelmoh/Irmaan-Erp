@@ -19,7 +19,7 @@ export function DOPrintView({ doc, verifyUrl, allocations }: Props) {
       {/* Header */}
       <header className="flex items-start justify-between pb-4 border-b-2 border-brand-800">
         <div className="flex items-start gap-3">
-          <Logo compact />
+          <Logo compact size={120} />
           <div>
             <div className="text-xl font-bold tracking-tight text-brand-900">{COMPANY.name}</div>
             <div className="text-[11px] text-slate-500">{COMPANY.tagline}</div>

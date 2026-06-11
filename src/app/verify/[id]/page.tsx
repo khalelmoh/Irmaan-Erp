@@ -40,7 +40,9 @@ export default function VerifyPage() {
     <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
       <div className="w-full max-w-lg bg-white rounded-2xl shadow-card overflow-hidden">
         <div className="bg-gradient-to-br from-brand-800 to-brand-950 text-white p-6 flex items-center justify-between">
-          <Logo />
+          <div className="bg-white p-2 rounded-xl shadow-sm w-fit">
+            <Logo />
+          </div>
           <div className="text-xs text-brand-200 uppercase tracking-wide">Document Verification</div>
         </div>
 
