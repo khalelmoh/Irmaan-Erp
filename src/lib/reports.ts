@@ -2,7 +2,7 @@
  * Pure aggregation helpers used by every report page.
  * Kept side-effect free so they're trivial to unit-test later.
  */
-import type { Invoice, Payment, PurchaseOrder, SupplierPayment, Product, Customer, Supplier } from "@/types";
+import type { Invoice, Payment, PurchaseOrder, SupplierPayment, Product, Customer, Supplier, DeliveryOrder, SalesOrder } from "@/types";
 import { outstanding, effectiveStatus } from "./invoice";
 import { poOutstanding } from "./purchase-order";
 
@@ -301,6 +301,268 @@ export function profitSummary(invoices: Invoice[], products: Product[], r: DateR
   const profit = round2(revenue - cogs);
   const marginPct = revenue > 0 ? round2((profit / revenue) * 100) : 0;
   return { revenue, cogs, profit, marginPct };
+}
+
+// ─── Monthly operations snapshot ─────────────────────────────────────────
+/** Range from 1st of the current month through today. */
+export function thisMonthRange(): DateRange {
+  const now = new Date();
+  const from = startOfMonth(now);
+  return {
+    from: from.toISOString().slice(0, 10),
+    to: now.toISOString().slice(0, 10),
+  };
+}
+
+export interface MonthlyOpsResult {
+  bagsSold: number;
+  doCount: number;
+  poCount: number;
+  bagsPurchased: number;
+  revenueBilled: number;
+  cashCollected: number;
+  supplierSpend: number;
+  newCustomers: number;
+}
+
+/** Aggregate operational KPIs for a given month range. */
+export function monthlyOperations(
+  deliveryOrders: DeliveryOrder[],
+  purchaseOrders: PurchaseOrder[],
+  invoices: Invoice[],
+  payments: Payment[],
+  supplierPayments: SupplierPayment[],
+  customers: Customer[],
+  r: DateRange,
+): MonthlyOpsResult {
+  // DOs this month (non-cancelled)
+  const dosInRange = deliveryOrders.filter(
+    (d) => d.status !== "cancelled" && inRange(d.orderDate, r),
+  );
+  const bagsSold = dosInRange.reduce(
+    (s, d) => s + d.items.reduce((t, it) => t + it.quantity, 0),
+    0,
+  );
+
+  // POs this month (non-cancelled, non-draft)
+  const posInRange = purchaseOrders.filter(
+    (p) => p.status !== "cancelled" && p.status !== "draft" && inRange(p.orderDate, r),
+  );
+  const bagsPurchased = posInRange.reduce(
+    (s, p) => s + p.items.reduce((t, it) => t + it.quantity, 0),
+    0,
+  );
+
+  // Invoices this month (non-cancelled)
+  const invoicesInRange = invoices.filter(
+    (i) => i.status !== "cancelled" && i.type !== "credit_note" && inRange(i.issueDate, r),
+  );
+  const creditNotesInRange = invoices.filter(
+    (i) => i.status !== "cancelled" && i.type === "credit_note" && inRange(i.issueDate, r),
+  );
+  const revenueBilled =
+    invoicesInRange.reduce((s, i) => s + i.total, 0) -
+    creditNotesInRange.reduce((s, i) => s + i.total, 0);
+
+  // Payments collected this month
+  const cashCollected = payments
+    .filter((p) => inRange(p.paidAt, r))
+    .reduce((s, p) => s + p.amount, 0);
+
+  // Supplier payments this month
+  const supplierSpend = supplierPayments
+    .filter((p) => inRange(p.paidAt, r))
+    .reduce((s, p) => s + p.amount, 0);
+
+  // New customers this month
+  const newCustomers = customers.filter((c) => inRange(c.createdAt, r)).length;
+
+  return {
+    bagsSold: round2(bagsSold),
+    doCount: dosInRange.length,
+    poCount: posInRange.length,
+    bagsPurchased: round2(bagsPurchased),
+    revenueBilled: round2(revenueBilled),
+    cashCollected: round2(cashCollected),
+    supplierSpend: round2(supplierSpend),
+    newCustomers,
+  };
+}
+
+/** Compute the range for the month before the given "YYYY-MM" string. */
+export function prevMonthRange(ym: string): DateRange {
+  const [y, m] = ym.split("-").map(Number);
+  const d = new Date(y, m - 2, 1);
+  const prevYm = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const from = new Date(d.getFullYear(), d.getMonth(), 1);
+  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+  return {
+    from: from.toISOString().slice(0, 10),
+    to: lastDay.toISOString().slice(0, 10),
+  };
+}
+
+/** Compute the percentage change between current and previous. */
+export function computeDelta(current: number, previous: number): { pct: number; direction: "up" | "down" | "flat" } {
+  if (previous === 0 && current === 0) return { pct: 0, direction: "flat" };
+  if (previous === 0) return { pct: 100, direction: "up" };
+  const pct = round2(((current - previous) / previous) * 100);
+  return { pct: Math.abs(pct), direction: pct > 0 ? "up" : pct < 0 ? "down" : "flat" };
+}
+
+// ─── Top products by volume ──────────────────────────────────────────────
+export function topProductsByVolume(
+  deliveryOrders: DeliveryOrder[],
+  r: DateRange,
+  limit = 5,
+) {
+  const map: Record<string, { name: string; qty: number }> = {};
+  deliveryOrders.forEach((d) => {
+    if (d.status === "cancelled" || !inRange(d.orderDate, r)) return;
+    d.items.forEach((it) => {
+      if (!map[it.productId]) map[it.productId] = { name: it.name, qty: 0 };
+      map[it.productId].qty += it.quantity;
+    });
+  });
+  return Object.values(map)
+    .sort((a, b) => b.qty - a.qty)
+    .slice(0, limit)
+    .map((x) => ({ ...x, qty: round2(x.qty) }));
+}
+
+// ─── Sales Order Pipeline ────────────────────────────────────────────────
+export function soPipelineSummary(salesOrders: SalesOrder[], r: DateRange) {
+  const inR = salesOrders.filter((s) => s.status !== "cancelled" && inRange(s.orderDate, r));
+  const total = inR.length;
+  const pipelineValue = round2(inR.reduce((s, o) => s + o.total, 0));
+  const confirmed = inR.filter((s) => s.status !== "quotation").length;
+  const fullyDelivered = inR.filter((s) => s.status === "fully_delivered" || s.status === "invoiced").length;
+  const conversionRate = total > 0 ? round2((confirmed / total) * 100) : 0;
+  const fulfillmentRate = confirmed > 0 ? round2((fullyDelivered / confirmed) * 100) : 0;
+  const avgValue = total > 0 ? round2(pipelineValue / total) : 0;
+  return { total, pipelineValue, confirmed, fullyDelivered, conversionRate, fulfillmentRate, avgValue };
+}
+
+export function soStatusBreakdown(salesOrders: SalesOrder[], r: DateRange) {
+  const statuses: Record<string, number> = {};
+  salesOrders.forEach((s) => {
+    if (s.status === "cancelled" || !inRange(s.orderDate, r)) return;
+    statuses[s.status] = (statuses[s.status] || 0) + 1;
+  });
+  return Object.entries(statuses).map(([status, count]) => ({ name: status, value: count }));
+}
+
+export function soByMonth(salesOrders: SalesOrder[], r: DateRange) {
+  const buckets = monthBuckets(r);
+  salesOrders.forEach((s) => {
+    if (s.status === "cancelled" || !inRange(s.orderDate, r)) return;
+    const k = monthKey(s.orderDate);
+    if (buckets[k]) buckets[k].billed += s.total;
+  });
+  return Object.entries(buckets)
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([k, v]) => ({ month: monthLabel(k), value: round2(v.billed), count: 0 }));
+}
+
+// ─── Salesperson Performance ─────────────────────────────────────────────
+export interface SalespersonRow {
+  id: string;
+  name: string;
+  soCount: number;
+  doCount: number;
+  revenue: number;
+  bagsSold: number;
+  avgDeal: number;
+}
+
+export function salespersonPerformance(
+  salesOrders: SalesOrder[],
+  deliveryOrders: DeliveryOrder[],
+  invoices: Invoice[],
+  r: DateRange,
+): SalespersonRow[] {
+  const map: Record<string, SalespersonRow> = {};
+  const ensure = (id: string, name: string) => {
+    if (!map[id]) map[id] = { id, name, soCount: 0, doCount: 0, revenue: 0, bagsSold: 0, avgDeal: 0 };
+  };
+
+  salesOrders.forEach((s) => {
+    if (s.status === "cancelled" || !inRange(s.orderDate, r)) return;
+    ensure(s.salespersonId, s.salespersonName);
+    map[s.salespersonId].soCount += 1;
+  });
+
+  deliveryOrders.forEach((d) => {
+    if (d.status === "cancelled" || !inRange(d.orderDate, r)) return;
+    ensure(d.salespersonId, d.salespersonName);
+    map[d.salespersonId].doCount += 1;
+    map[d.salespersonId].bagsSold += d.items.reduce((t, it) => t + it.quantity, 0);
+  });
+
+  invoices.forEach((inv) => {
+    if (inv.status === "cancelled" || inv.type === "credit_note" || !inRange(inv.issueDate, r)) return;
+    // Link via salesOrderId if available — otherwise skip (can't attribute)
+    const so = salesOrders.find((s) => s.id === inv.salesOrderId);
+    if (so) {
+      ensure(so.salespersonId, so.salespersonName);
+      map[so.salespersonId].revenue += inv.total;
+    }
+  });
+
+  return Object.values(map)
+    .map((x) => ({
+      ...x,
+      revenue: round2(x.revenue),
+      bagsSold: round2(x.bagsSold),
+      avgDeal: x.soCount > 0 ? round2(x.revenue / x.soCount) : 0,
+    }))
+    .sort((a, b) => b.revenue - a.revenue);
+}
+
+// ─── Delivery Performance ────────────────────────────────────────────────
+export function deliverySummary(deliveryOrders: DeliveryOrder[], r: DateRange) {
+  const inR = deliveryOrders.filter((d) => d.status !== "cancelled" && inRange(d.orderDate, r));
+  const total = inR.length;
+  const delivered = inR.filter((d) => d.status === "delivered").length;
+  const deliveredRate = total > 0 ? round2((delivered / total) * 100) : 0;
+  const bagsDelivered = round2(
+    inR.filter((d) => d.status === "delivered").reduce(
+      (s, d) => s + d.items.reduce((t, it) => t + it.quantity, 0), 0,
+    ),
+  );
+  const totalBags = round2(
+    inR.reduce((s, d) => s + d.items.reduce((t, it) => t + it.quantity, 0), 0),
+  );
+  return { total, delivered, deliveredRate, bagsDelivered, totalBags };
+}
+
+export function deliveriesByDestination(deliveryOrders: DeliveryOrder[], r: DateRange, limit = 8) {
+  const map: Record<string, { destination: string; count: number; bags: number }> = {};
+  deliveryOrders.forEach((d) => {
+    if (d.status === "cancelled" || !inRange(d.orderDate, r)) return;
+    const dest = d.loadingDetails?.destination || "Unknown";
+    if (!map[dest]) map[dest] = { destination: dest, count: 0, bags: 0 };
+    map[dest].count += 1;
+    map[dest].bags += d.items.reduce((t, it) => t + it.quantity, 0);
+  });
+  return Object.values(map)
+    .sort((a, b) => b.bags - a.bags)
+    .slice(0, limit);
+}
+
+export function deliveriesByMonth(deliveryOrders: DeliveryOrder[], r: DateRange) {
+  const buckets = monthBuckets(r);
+  deliveryOrders.forEach((d) => {
+    if (d.status === "cancelled" || !inRange(d.orderDate, r)) return;
+    const k = monthKey(d.orderDate);
+    if (buckets[k]) {
+      buckets[k].billed += 1; // reuse billed as count
+      buckets[k].collected += d.items.reduce((t, it) => t + it.quantity, 0); // reuse collected as bags
+    }
+  });
+  return Object.entries(buckets)
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([k, v]) => ({ month: monthLabel(k), deliveries: v.billed, bags: round2(v.collected) }));
 }
 
 // ─── Utilities ───────────────────────────────────────────────────────────
