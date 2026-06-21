@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -33,7 +33,7 @@ export default function SOViewPage() {
   const [verifyUrl, setVerifyUrl] = useState("");
   const [err, setErr] = useState<string | null>(null);
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     if (!params.id) return;
     const d = await dataAdapter.salesOrders.get(params.id);
     setDoc(d);
@@ -44,9 +44,9 @@ export default function SOViewPage() {
       const data = await QRCode.toDataURL(url, { margin: 1, width: 200, color: { dark: "#0b1e3f", light: "#ffffff" } });
       setQrDataUrl(data);
     }
-  }
+  }, [params.id]);
 
-  useEffect(() => { refresh(); }, [params.id]);
+  useEffect(() => { refresh(); }, [refresh]);
 
   if (!doc) return <div className="text-sm text-slate-500">Loading sales order…</div>;
 

@@ -1,5 +1,7 @@
 node_modules
 .next
+functions/lib/
+.firebase-local/
 .env.local
 .env*.local
 *.log
@@ -7,6 +9,7 @@ node_modules
 
 # Service account credentials — NEVER commit these
 service-account.json
+service-account*.json
 serviceAccountKey.json
 firebase-adminsdk-*.json
 

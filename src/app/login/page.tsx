@@ -8,11 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Logo } from "@/components/layout/Logo";
 import { Loader2 } from "lucide-react";
+import { activeAdapterName } from "@/services";
 
 export default function LoginPage() {
   const { signIn } = useAuth();
   const [email, setEmail] = useState("admin@irmaan.co");
-  const [password, setPassword] = useState("demo1234");
+  const [password, setPassword] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -55,6 +56,11 @@ export default function LoginPage() {
           <div className="lg:hidden mb-6"><Logo /></div>
           <h1 className="text-2xl font-semibold text-slate-900">Sign in</h1>
           <p className="text-sm text-slate-500 mt-1">Welcome back. Please enter your details.</p>
+          <p className="text-xs text-slate-400 mt-2">
+            {activeAdapterName === "firebase"
+              ? "Firebase authentication"
+              : "Demo authentication"}
+          </p>
 
           <div className="mt-8 space-y-4">
             <div>

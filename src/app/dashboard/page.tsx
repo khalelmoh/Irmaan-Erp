@@ -16,12 +16,18 @@ import { STATUS_VARIANT, outstanding, effectiveStatus } from "@/lib/invoice";
 import { poOutstanding } from "@/lib/purchase-order";
 import { computeDelta, prevMonthRange, monthlyOperations, thisMonthRange } from "@/lib/reports";
 import type { DeliveryOrder, Customer, Product, Invoice, Payment, PurchaseOrder, Supplier, SupplierPayment, SalesOrder } from "@/types";
+import { useAuth } from "@/contexts/AuthContext";
 
 const doStatusVariant = {
   draft: "default", issued: "info", delivered: "success", cancelled: "danger",
 } as const;
 
 export default function DashboardPage() {
+  const { user } = useAuth();
+  const role = user?.role;
+  const canPurchase = role === "admin" || role === "manager" || role === "warehouse";
+  const canInvoice = role === "admin" || role === "manager" || role === "sales";
+  const canViewSupplierPayments = role === "admin" || role === "manager";
   const [data, setData] = useState<{
     dos: DeliveryOrder[];
     customers: Customer[];
@@ -35,20 +41,21 @@ export default function DashboardPage() {
   } | null>(null);
 
   useEffect(() => {
+    if (!role) return;
     Promise.all([
       dataAdapter.deliveryOrders.list(),
       dataAdapter.customers.list(),
-      dataAdapter.suppliers.list(),
+      canPurchase ? dataAdapter.suppliers.list() : Promise.resolve([]),
       dataAdapter.products.list(),
-      dataAdapter.invoices.list(),
-      dataAdapter.payments.list(),
-      dataAdapter.purchaseOrders.list(),
-      dataAdapter.supplierPayments.list(),
+      canInvoice ? dataAdapter.invoices.list() : Promise.resolve([]),
+      canInvoice ? dataAdapter.payments.list() : Promise.resolve([]),
+      canPurchase ? dataAdapter.purchaseOrders.list() : Promise.resolve([]),
+      canViewSupplierPayments ? dataAdapter.supplierPayments.list() : Promise.resolve([]),
       dataAdapter.salesOrders.list(),
     ]).then(([dos, customers, suppliers, products, invoices, payments, pos, supplierPays, salesOrders]) => {
       setData({ dos, customers, suppliers, products, invoices, payments, pos, supplierPays, salesOrders });
     });
-  }, []);
+  }, [canInvoice, canPurchase, canViewSupplierPayments, role]);
 
   const stats = useMemo(() => {
     if (!data) return null;
@@ -100,12 +107,16 @@ export default function DashboardPage() {
         description="Operational overview of your trading business."
         actions={
           <div className="flex gap-2">
-            <Button asChild variant="outline">
-              <Link href="/purchase-orders/new"><ShoppingCart className="h-4 w-4 mr-2" /> New P.O</Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link href="/invoices/new"><FileText className="h-4 w-4 mr-2" /> New Invoice</Link>
-            </Button>
+            {canPurchase && (
+              <Button asChild variant="outline">
+                <Link href="/purchase-orders/new"><ShoppingCart className="h-4 w-4 mr-2" /> New P.O</Link>
+              </Button>
+            )}
+            {canInvoice && (
+              <Button asChild variant="outline">
+                <Link href="/invoices/new"><FileText className="h-4 w-4 mr-2" /> New Invoice</Link>
+              </Button>
+            )}
             <Button asChild>
               <Link href="/delivery-orders/new"><Truck className="h-4 w-4 mr-2" /> New D.O</Link>
             </Button>

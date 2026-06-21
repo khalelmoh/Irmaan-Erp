@@ -1,74 +1,96 @@
 /**
- * Restore script — counterpart to backup.ts.
- * ⚠️  DESTRUCTIVE: overwrites existing documents with the same ID. Use with care.
+ * Validates or restores a versioned or legacy ERP JSON backup.
  *
- * Usage:
- *   npx tsx scripts/restore.ts ./backups/backup-2026-06-03T18-32-00.json
+ * Dry run is fully offline:
+ *   npm run restore -- ./backups/example.json --dry-run
  *
- * Add --dry-run to preview without writing.
+ * Live restore overwrites documents with matching IDs and requires Firebase
+ * admin credentials. It never deletes documents not present in the backup.
  */
 import { cert, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { readFileSync, existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
+import { normalizeBackupPayload } from "./backup-format";
+
+function loadLocalEnvironment() {
+  try {
+    process.loadEnvFile?.(".env.local");
+  } catch {
+    // CI and production hosts generally provide environment variables directly.
+  }
+}
+
+function getServiceAccount() {
+  loadLocalEnvironment();
+  const serviceAccountPath =
+    process.env.GOOGLE_APPLICATION_CREDENTIALS || "./service-account.json";
+  if (existsSync(serviceAccountPath)) return require(serviceAccountPath);
+  if (
+    process.env.FIREBASE_PROJECT_ID &&
+    process.env.FIREBASE_CLIENT_EMAIL &&
+    process.env.FIREBASE_PRIVATE_KEY
+  ) {
+    return {
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
+    };
+  }
+  throw new Error(
+    "Configure GOOGLE_APPLICATION_CREDENTIALS or Firebase admin environment credentials",
+  );
+}
 
 async function main() {
   const file = process.argv[2];
   const dryRun = process.argv.includes("--dry-run");
-
   if (!file) {
-    console.error("Usage: npx tsx scripts/restore.ts <backup-file.json> [--dry-run]");
-    process.exit(1);
+    throw new Error("Usage: npm run restore -- <backup-file.json> [--dry-run]");
   }
-  if (!existsSync(file)) {
-    console.error(`❌ File not found: ${file}`);
-    process.exit(1);
-  }
+  if (!existsSync(file)) throw new Error(`File not found: ${file}`);
 
-  const serviceAccountPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || "./service-account.json";
-  if (!existsSync(serviceAccountPath)) {
-    console.error(`❌ Service account file not found at ${serviceAccountPath}`);
-    process.exit(1);
-  }
+  const payload = normalizeBackupPayload(JSON.parse(readFileSync(file, "utf8")));
+  console.log(`Restoring from ${file}`);
+  console.log(`Original export date: ${payload.exportedAt}`);
+  console.log(`Mode: ${dryRun ? "DRY RUN (no writes)" : "LIVE WRITE"}\n`);
 
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const serviceAccount = require(serviceAccountPath);
-  initializeApp({ credential: cert(serviceAccount) });
-  const db = getFirestore();
-
-  const payload = JSON.parse(readFileSync(file, "utf8")) as {
-    exportedAt: string;
-    data: Record<string, Array<{ id: string } & Record<string, unknown>>>;
-  };
-
-  console.log(`📂 Restoring from ${file}`);
-  console.log(`   Original export date: ${payload.exportedAt}`);
-  console.log(`   Mode: ${dryRun ? "DRY RUN (no writes)" : "⚠️  LIVE WRITE"}\n`);
-
+  let db: ReturnType<typeof getFirestore> | null = null;
   if (!dryRun) {
-    console.log("Continuing in 5 seconds... press Ctrl+C to abort.");
-    await new Promise((r) => setTimeout(r, 5000));
+    const serviceAccount = getServiceAccount();
+    initializeApp({
+      credential: cert(serviceAccount),
+      projectId: serviceAccount.projectId,
+    });
+    db = getFirestore();
+    console.log("Continuing in 5 seconds. Press Ctrl+C to abort.");
+    await new Promise((resolve) => setTimeout(resolve, 5000));
   }
 
   let totalDocs = 0;
-  for (const [collection, docs] of Object.entries(payload.data)) {
-    const batch = db.batch();
+  for (const [collection, documents] of Object.entries(payload.data)) {
+    let batch = db?.batch();
     let batchCount = 0;
-    for (const { id, ...data } of docs) {
-      if (!dryRun) batch.set(db.collection(collection).doc(id), data);
+    for (const { id, ...data } of documents) {
+      if (!dryRun) batch!.set(db!.collection(collection).doc(id), data);
       batchCount++;
       if (batchCount >= 400) {
-        if (!dryRun) await batch.commit();
+        if (!dryRun) await batch!.commit();
+        batch = db?.batch();
         batchCount = 0;
       }
     }
-    if (batchCount > 0 && !dryRun) await batch.commit();
-    console.log(`   ${dryRun ? "would write" : "wrote     "} ${collection.padEnd(20)} ${docs.length.toString().padStart(6)} docs`);
-    totalDocs += docs.length;
+    if (batchCount > 0 && !dryRun) await batch!.commit();
+    console.log(
+      `${dryRun ? "would write" : "wrote      "} ${collection.padEnd(20)} ${documents.length
+        .toString()
+        .padStart(6)} docs`,
+    );
+    totalDocs += documents.length;
   }
-  console.log(`\n✅ ${dryRun ? "Dry run complete" : "Restore complete"}: ${totalDocs} documents`);
+  console.log(`\n${dryRun ? "Dry run complete" : "Restore complete"}: ${totalDocs} documents`);
 }
 
-main().catch((err) => {
-  console.error("❌ Restore failed:", err);
+main().catch((error) => {
+  console.error("Restore failed:", error);
   process.exit(1);
 });

@@ -10,7 +10,8 @@ import {
 } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { dataAdapter } from "@/services";
-import type { User } from "@/types";
+import { canAccessPath } from "@/lib/route-access";
+import type { Role, User } from "@/types";
 
 interface AuthCtx {
   user: User | null;
@@ -42,6 +43,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const isPublic = PUBLIC_PATHS.some((p) => pathname?.startsWith(p));
     if (!user && !isPublic) router.replace("/login");
     if (user && pathname === "/login") router.replace("/dashboard");
+    if (user && !isPublic && !canAccessPath(user.role as Role, pathname ?? "")) {
+      router.replace("/dashboard");
+    }
   }, [user, loading, pathname, router]);
 
   const signIn = useCallback(async (email: string, password: string) => {

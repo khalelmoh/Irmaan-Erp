@@ -11,16 +11,30 @@ interface Props {
 
 export function QRBlock({ value, size = 110, className }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const qrValue = value.trim();
 
   useEffect(() => {
-    if (!canvasRef.current) return;
-    QRCode.toCanvas(canvasRef.current, value, {
+    const canvas = canvasRef.current;
+    if (!canvas || !qrValue) return;
+
+    let cancelled = false;
+    QRCode.toCanvas(canvas, qrValue, {
       margin: 1,
       width: size,
       color: { dark: "#0b1e3f", light: "#ffffff" },
       errorCorrectionLevel: "M",
+    }).catch((error) => {
+      if (!cancelled) {
+        console.warn("[qr] unable to render QR code:", error);
+      }
     });
-  }, [value, size]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [qrValue, size]);
+
+  if (!qrValue) return null;
 
   return <canvas ref={canvasRef} className={className} aria-label="Document QR code" />;
 }

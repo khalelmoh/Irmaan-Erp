@@ -41,7 +41,7 @@ export default function ForgotPasswordPage() {
         <div className="max-w-md">
           <h2 className="text-3xl font-semibold leading-tight">Forgot your password?</h2>
           <p className="text-brand-100 mt-3 text-sm leading-relaxed">
-            Enter your email and we'll send you a secure link to reset it.
+            Enter your email and we&apos;ll send you a secure link to reset it.
           </p>
         </div>
         <div className="text-xs text-brand-200">
@@ -60,17 +60,17 @@ export default function ForgotPasswordPage() {
               </div>
               <h1 className="text-2xl font-semibold text-slate-900">Check your inbox</h1>
               <p className="text-sm text-slate-600 mt-2">
-                If an account exists for <strong>{email}</strong>, we've sent a password reset link.
+                If an account exists for <strong>{email}</strong>, we&apos;ve sent a password reset link.
                 Click it to choose a new password.
               </p>
               <div className="mt-6 p-3 rounded-md bg-slate-50 border border-slate-200 text-xs text-slate-600 text-left">
                 <div className="font-medium text-slate-700 mb-1 flex items-center gap-1">
-                  <Mail className="h-3.5 w-3.5" /> Didn't get the email?
+                  <Mail className="h-3.5 w-3.5" /> Didn&apos;t get the email?
                 </div>
                 <ul className="space-y-1 pl-4 list-disc">
                   <li>Check your spam / junk folder</li>
-                  <li>Make sure the email matches what's on file</li>
-                  <li>Contact your admin if you still can't access it</li>
+                  <li>Make sure the email matches what&apos;s on file</li>
+                  <li>Contact your admin if you still can&apos;t access it</li>
                 </ul>
               </div>
               <Button asChild variant="outline" className="mt-6 w-full">
@@ -83,7 +83,7 @@ export default function ForgotPasswordPage() {
             <form onSubmit={onSubmit}>
               <h1 className="text-2xl font-semibold text-slate-900">Reset your password</h1>
               <p className="text-sm text-slate-500 mt-1">
-                We'll email you a link to choose a new one.
+                We&apos;ll email you a link to choose a new one.
               </p>
 
               <div className="mt-8 space-y-4">

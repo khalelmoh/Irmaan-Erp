@@ -141,6 +141,7 @@ export interface DeliveryOrder {
 }
 
 export type POStatus = "draft" | "sent" | "partial_received" | "received" | "cancelled";
+export type ApprovalStatus = "not_requested" | "pending" | "approved" | "rejected";
 
 export interface POItem {
   productId: string;
@@ -167,6 +168,14 @@ export interface PurchaseOrder {
   total: number;
   amountPaid: number;       // A/P tracking
   status: POStatus;
+  approvalStatus?: ApprovalStatus;
+  approvalRequestedBy?: string;
+  approvalRequestedAt?: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  rejectedBy?: string;
+  rejectedAt?: string;
+  rejectionReason?: string;
   receivedAt?: string;      // when fully received
   notes?: string;
   qrPayload: string;
@@ -236,6 +245,9 @@ export interface Invoice {
   total: number;
   amountPaid: number;
   status: InvoiceStatus;
+  approvalStatus?: ApprovalStatus;
+  approvedBy?: string;
+  approvedAt?: string;
   notes?: string;
   createdAt: string;
   updatedAt: string;
@@ -285,6 +297,7 @@ export type ActivityAction =
   | "do.create" | "do.update" | "do.cancel" | "do.issue" | "do.mark_delivered"
   // Purchase Orders
   | "po.create" | "po.update" | "po.confirm" | "po.cancel" | "po.receive" | "po.payment"
+  | "po.approval_requested" | "po.approved" | "po.rejected"
   // Invoices
   | "invoice.create" | "invoice.update" | "invoice.cancel" | "invoice.send" | "invoice.payment" | "credit_note.create"
   // Stock

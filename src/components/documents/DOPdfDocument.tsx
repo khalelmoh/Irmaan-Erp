@@ -4,6 +4,7 @@
  * React-PDF document for the Delivery Order. Used by the download flow.
  * Kept in a client module because @react-pdf/renderer is rendered on the client.
  */
+/* eslint-disable jsx-a11y/alt-text -- React PDF Image is not a DOM img element. */
 import {
   Document,
   Page,

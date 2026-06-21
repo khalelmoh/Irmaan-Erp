@@ -6,6 +6,7 @@ import { dataAdapter } from "@/services";
 import { Search, X, Truck, FileText, ShoppingCart, Users, Building2, Package, ArrowRight } from "lucide-react";
 import type { DeliveryOrder, PurchaseOrder, Invoice, Customer, Supplier, Product } from "@/types";
 import { currency } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
 
 type SearchResult = {
   id: string;
@@ -23,6 +24,9 @@ interface Props {
 
 export function CommandPalette({ open, onClose }: Props) {
   const router = useRouter();
+  const { user } = useAuth();
+  const canPurchase = user?.role === "admin" || user?.role === "manager" || user?.role === "warehouse";
+  const canInvoice = user?.role === "admin" || user?.role === "manager" || user?.role === "sales";
   const inputRef = useRef<HTMLInputElement>(null);
   const [q, setQ] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
@@ -36,15 +40,15 @@ export function CommandPalette({ open, onClose }: Props) {
     if (!open || data) return;
     Promise.all([
       dataAdapter.deliveryOrders.list(),
-      dataAdapter.purchaseOrders.list(),
-      dataAdapter.invoices.list(),
+      canPurchase ? dataAdapter.purchaseOrders.list() : Promise.resolve([]),
+      canInvoice ? dataAdapter.invoices.list() : Promise.resolve([]),
       dataAdapter.customers.list(),
-      dataAdapter.suppliers.list(),
+      canPurchase ? dataAdapter.suppliers.list() : Promise.resolve([]),
       dataAdapter.products.list(),
     ]).then(([dos, pos, invoices, customers, suppliers, products]) =>
       setData({ dos, pos, invoices, customers, suppliers, products }),
     );
-  }, [open, data]);
+  }, [canInvoice, canPurchase, open, data]);
 
   // Reset + focus on open
   useEffect(() => {

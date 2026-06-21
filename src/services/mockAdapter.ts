@@ -422,6 +422,37 @@ function computeAutoSOStatus(so: SalesOrder): SOStatus {
   return "confirmed";
 }
 
+function updateSOProgress(
+  s: Store,
+  soId: string | undefined,
+  items: Array<{ productId: string; quantity: number }>,
+  field: "deliveredQty" | "invoicedQty",
+) {
+  if (!soId || items.length === 0) return;
+  const so = s.salesOrders.find((x) => x.id === soId);
+  if (!so) throw new Error("Sales order not found");
+  if (so.status === "cancelled") throw new Error("Cannot update a cancelled sales order");
+
+  for (const r of items) {
+    const line = so.items.find((it) => it.productId === r.productId);
+    if (!line) throw new Error(`Item ${r.productId} is not on ${so.soNumber}`);
+    const next = Math.round(((line[field] ?? 0) + r.quantity) * 100) / 100;
+    if (next < -0.001) {
+      throw new Error(`${so.soNumber} ${field === "deliveredQty" ? "delivery" : "invoice"} quantity cannot be negative`);
+    }
+    if (next > line.quantity + 0.001) {
+      const action = field === "deliveredQty" ? "deliver" : "invoice";
+      throw new Error(
+        `Cannot ${action} ${r.quantity} ${line.unit} of ${line.name}; ${so.soNumber} has only ${Math.max(0, line.quantity - (line[field] ?? 0))} remaining`,
+      );
+    }
+    line[field] = Math.max(0, next);
+  }
+
+  so.status = computeAutoSOStatus(so);
+  so.updatedAt = new Date().toISOString();
+}
+
 const salesOrders: DataAdapter["salesOrders"] = {
   ...soBase,
   async nextNumber() {
@@ -466,37 +497,31 @@ const salesOrders: DataAdapter["salesOrders"] = {
   },
   async updateDeliveredQty(soId, items) {
     return tx((s) => {
-      const so = s.salesOrders.find((x) => x.id === soId);
-      if (!so) throw new Error("Sales order not found");
-      for (const r of items) {
-        const line = so.items.find((it) => it.productId === r.productId);
-        if (line) {
-          line.deliveredQty = (line.deliveredQty ?? 0) + r.quantity;
-        }
-      }
-      so.status = computeAutoSOStatus(so);
-      so.updatedAt = new Date().toISOString();
+      updateSOProgress(s, soId, items, "deliveredQty");
+      const so = s.salesOrders.find((x) => x.id === soId)!;
       return so;
     });
   },
   async updateInvoicedQty(soId, items) {
     return tx((s) => {
-      const so = s.salesOrders.find((x) => x.id === soId);
-      if (!so) throw new Error("Sales order not found");
-      for (const r of items) {
-        const line = so.items.find((it) => it.productId === r.productId);
-        if (line) {
-          line.invoicedQty = (line.invoicedQty ?? 0) + r.quantity;
-        }
-      }
-      so.status = computeAutoSOStatus(so);
-      so.updatedAt = new Date().toISOString();
+      updateSOProgress(s, soId, items, "invoicedQty");
+      const so = s.salesOrders.find((x) => x.id === soId)!;
       return so;
     });
   },
 };
 
 const doBase = crud<"deliveryOrders", DeliveryOrder>("deliveryOrders");
+
+function validateDeliverySalesOrder(s: Store, deliveryOrder: DeliveryOrder) {
+  if (!deliveryOrder.salesOrderId) return;
+  const salesOrder = s.salesOrders.find((so) => so.id === deliveryOrder.salesOrderId);
+  if (!salesOrder) throw new Error("Sales order not found");
+  if (salesOrder.customerId !== deliveryOrder.customerId) {
+    throw new Error("Delivery order customer does not match the sales order");
+  }
+}
+
 const deliveryOrders: DataAdapter["deliveryOrders"] = {
   ...doBase,
   async nextNumber() {
@@ -519,6 +544,7 @@ const deliveryOrders: DataAdapter["deliveryOrders"] = {
       // Decrement stock for each line when DO is created in "issued" status.
       // (Drafts don't reserve stock.)
       if (item.status === "issued" || item.status === "delivered") {
+        validateDeliverySalesOrder(s, item);
         for (const it of item.items) {
           applyStockChange(s, {
             productId: it.productId,
@@ -531,6 +557,7 @@ const deliveryOrders: DataAdapter["deliveryOrders"] = {
           });
         }
         item.allocations = allocateFromPOs(s, item.id, item.doNumber, item.items, item.createdBy ?? "system");
+        updateSOProgress(s, item.salesOrderId, item.items, "deliveredQty");
       }
 
       s.deliveryOrders.push(item);
@@ -547,6 +574,22 @@ const deliveryOrders: DataAdapter["deliveryOrders"] = {
       // Cancellation returns stock if the DO had previously consumed it
       const wasConsumed = before.status === "issued" || before.status === "delivered";
       const isCancelled = after.status === "cancelled";
+      const itemsChanged = JSON.stringify(before.items) !== JSON.stringify(after.items);
+      const statusChanged = before.status !== after.status;
+      const validTransition =
+        !statusChanged ||
+        (before.status === "draft" && ["issued", "cancelled"].includes(after.status)) ||
+        (before.status === "issued" && ["delivered", "cancelled"].includes(after.status)) ||
+        (before.status === "delivered" && after.status === "cancelled");
+      if (!validTransition) {
+        throw new Error(`Unsupported delivery-order transition from ${before.status} to ${after.status}`);
+      }
+      if (isCancelled && before.invoiceId) {
+        throw new Error("Cancel the linked invoice before cancelling this delivery order");
+      }
+      if (wasConsumed && !isCancelled && itemsChanged) {
+        throw new Error("Issued delivery order items cannot be edited. Cancel the D.O and create a replacement.");
+      }
       if (wasConsumed && isCancelled) {
         for (const it of before.items) {
           applyStockChange(s, {
@@ -561,12 +604,14 @@ const deliveryOrders: DataAdapter["deliveryOrders"] = {
           });
         }
         deallocateFromPOs(s, before.id);
+        updateSOProgress(s, before.salesOrderId, before.items.map((it) => ({ ...it, quantity: -it.quantity })), "deliveredQty");
         after.allocations = [];
       }
 
       // If transitioning from draft to issued, consume stock
       const isBecomingIssued = before.status === "draft" && (after.status === "issued" || after.status === "delivered");
       if (isBecomingIssued) {
+        validateDeliverySalesOrder(s, after);
         for (const it of after.items) {
           applyStockChange(s, {
             productId: it.productId,
@@ -579,6 +624,7 @@ const deliveryOrders: DataAdapter["deliveryOrders"] = {
           });
         }
         after.allocations = allocateFromPOs(s, after.id, after.doNumber, after.items, "system");
+        updateSOProgress(s, after.salesOrderId, after.items, "deliveredQty");
       }
 
       s.deliveryOrders[idx] = after;
@@ -615,6 +661,58 @@ const purchaseOrders: DataAdapter["purchaseOrders"] = {
   async nextNumber() {
     return tx((s) => `PO-${padNumber(s.counters.po + 1, 5)}`);
   },
+  async requestApproval(poId) {
+    return tx((s) => {
+      const po = s.purchaseOrders.find((item) => item.id === poId);
+      if (!po) throw new Error("Purchase order not found");
+      if (po.status !== "draft") throw new Error("Only draft purchase orders need approval");
+      if (po.approvalStatus === "pending") throw new Error("Approval has already been requested");
+      const actor = s.session ? s.users.find((user) => user.uid === s.session!.uid) : null;
+      if (!actor || !["admin", "manager"].includes(actor.role)) {
+        throw new Error("Manager access required");
+      }
+      po.approvalStatus = "pending";
+      po.approvalRequestedBy = actor.uid;
+      po.approvalRequestedAt = new Date().toISOString();
+      po.approvedBy = undefined;
+      po.approvedAt = undefined;
+      po.rejectedBy = undefined;
+      po.rejectedAt = undefined;
+      po.rejectionReason = undefined;
+      po.updatedAt = new Date().toISOString();
+      return po;
+    });
+  },
+  async decideApproval(poId, decision, reason) {
+    return tx((s) => {
+      const po = s.purchaseOrders.find((item) => item.id === poId);
+      if (!po) throw new Error("Purchase order not found");
+      const actor = s.session ? s.users.find((user) => user.uid === s.session!.uid) : null;
+      if (!actor || actor.role !== "admin") throw new Error("Administrator access required");
+      if (po.status !== "draft" || po.approvalStatus !== "pending") {
+        throw new Error("No pending approval exists");
+      }
+      if (decision === "rejected" && (!reason || reason.trim().length < 3)) {
+        throw new Error("A rejection reason is required");
+      }
+      po.approvalStatus = decision;
+      if (decision === "approved") {
+        po.approvedBy = actor.uid;
+        po.approvedAt = new Date().toISOString();
+        po.rejectedBy = undefined;
+        po.rejectedAt = undefined;
+        po.rejectionReason = undefined;
+      } else {
+        po.rejectedBy = actor.uid;
+        po.rejectedAt = new Date().toISOString();
+        po.rejectionReason = reason!.trim();
+        po.approvedBy = undefined;
+        po.approvedAt = undefined;
+      }
+      po.updatedAt = new Date().toISOString();
+      return po;
+    });
+  },
   async create(input) {
     return tx((s) => {
       s.counters.po += 1;
@@ -629,6 +727,19 @@ const purchaseOrders: DataAdapter["purchaseOrders"] = {
         createdAt: now,
         updatedAt: now,
       } as PurchaseOrder;
+      const actor = s.session ? s.users.find((user) => user.uid === s.session!.uid) : null;
+      if (item.status === "sent" && actor?.role === "manager") {
+        item.status = "draft";
+        item.approvalStatus = "pending";
+        item.approvalRequestedBy = actor.uid;
+        item.approvalRequestedAt = now;
+      } else if (item.status === "sent") {
+        item.approvalStatus = "approved";
+        item.approvedBy = actor?.uid ?? item.createdBy;
+        item.approvedAt = now;
+      } else {
+        item.approvalStatus = "not_requested";
+      }
       // Ensure receivedQty starts at 0
       item.items = item.items.map((it) => ({ ...it, receivedQty: it.receivedQty ?? 0 }));
       s.purchaseOrders.push(item);
@@ -642,10 +753,36 @@ const purchaseOrders: DataAdapter["purchaseOrders"] = {
       if (idx === -1) throw new Error("Not found");
       const before = s.purchaseOrders[idx];
       const after = { ...before, ...patch, updatedAt: new Date().toISOString() };
+      const actor = s.session ? s.users.find((user) => user.uid === s.session!.uid) : null;
+      if (before.status === "draft" && patch.status === "sent") {
+        if (actor?.role === "manager" && before.approvalStatus !== "approved") {
+          after.status = "draft";
+          after.approvalStatus = "pending";
+          after.approvalRequestedBy = actor.uid;
+          after.approvalRequestedAt = new Date().toISOString();
+        } else {
+          after.approvalStatus = "approved";
+          after.approvedBy = actor?.uid ?? before.createdBy;
+          after.approvedAt = new Date().toISOString();
+        }
+      }
+      const itemsChanged = JSON.stringify(before.items) !== JSON.stringify(after.items);
+      const hasReceipts = before.items.some((it) => (it.receivedQty ?? 0) > 0);
+      const hasAllocations = before.items.some((it) => (it.allocatedQty ?? 0) > 0);
+
+      if (itemsChanged && (hasReceipts || before.amountPaid > 0)) {
+        throw new Error("Purchase order items cannot be edited after receipts or payments. Create a correction instead.");
+      }
 
       // If cancelling a PO that already had stock received, reverse those receipts.
       const becomingCancelled = before.status !== "cancelled" && after.status === "cancelled";
       if (becomingCancelled) {
+        if (hasAllocations) {
+          throw new Error("Cannot cancel a purchase order with stock already allocated to delivery orders.");
+        }
+        if (before.amountPaid > 0) {
+          throw new Error("Cannot cancel a purchase order with supplier payments recorded.");
+        }
         for (const it of before.items) {
           const received = it.receivedQty ?? 0;
           if (received > 0) {
@@ -853,6 +990,42 @@ function isOverdue(inv: Invoice) {
   return new Date(inv.dueDate).getTime() < Date.now();
 }
 
+function countsTowardSOInvoice(inv: Invoice) {
+  return inv.type !== "credit_note" && inv.status !== "draft" && inv.status !== "cancelled";
+}
+
+function validateAndLinkInvoiceDOs(s: Store, inv: Invoice) {
+  for (const doId of inv.doIds) {
+    const d = s.deliveryOrders.find((x) => x.id === doId);
+    if (!d) throw new Error(`Delivery order ${doId} not found`);
+    if (d.status !== "issued" && d.status !== "delivered") {
+      throw new Error(`${d.doNumber} must be issued before invoicing`);
+    }
+    if (d.customerId !== inv.customerId) {
+      throw new Error(`${d.doNumber} belongs to a different customer`);
+    }
+    if (inv.salesOrderId && d.salesOrderId && d.salesOrderId !== inv.salesOrderId) {
+      throw new Error(`${d.doNumber} belongs to a different sales order`);
+    }
+    if (d.invoiceId && d.invoiceId !== inv.id) {
+      throw new Error(`${d.doNumber} is already linked to an invoice`);
+    }
+  }
+
+  if (inv.salesOrderId) {
+    const salesOrder = s.salesOrders.find((so) => so.id === inv.salesOrderId);
+    if (!salesOrder) throw new Error("Sales order not found");
+    if (salesOrder.customerId !== inv.customerId) {
+      throw new Error("Invoice customer does not match the sales order");
+    }
+  }
+
+  inv.doIds.forEach((doId) => {
+    const d = s.deliveryOrders.find((x) => x.id === doId);
+    if (d) d.invoiceId = inv.id;
+  });
+}
+
 /** Recompute a customer's outstanding A/R from invoices. */
 function recomputeCustomerBalance(s: Store, customerId: string) {
   const c = s.customers.find((x) => x.id === customerId);
@@ -886,12 +1059,20 @@ const invoices: DataAdapter["invoices"] = {
         createdAt: now,
         updatedAt: now,
       } as Invoice;
+      const actor = s.session ? s.users.find((user) => user.uid === s.session!.uid) : null;
+      if (item.type === "credit_note") {
+        if (actor?.role === "sales" && item.status !== "draft") item.status = "draft";
+        item.approvalStatus = item.status === "draft" ? "pending" : "approved";
+        if (item.status !== "draft") {
+          item.approvedBy = actor?.uid ?? "system";
+          item.approvedAt = now;
+        }
+      }
       s.invoices.push(item);
-      // Mark linked DOs as invoiced
-      item.doIds.forEach((doId) => {
-        const d = s.deliveryOrders.find((x) => x.id === doId);
-        if (d) d.invoiceId = item.id;
-      });
+      if (countsTowardSOInvoice(item)) {
+        validateAndLinkInvoiceDOs(s, item);
+        updateSOProgress(s, item.salesOrderId, item.items, "invoicedQty");
+      }
 
       // Handle stock reversal for credit notes (goods returned)
       if (item.type === "credit_note" && item.status !== "draft") {
@@ -919,7 +1100,41 @@ const invoices: DataAdapter["invoices"] = {
       const idx = s.invoices.findIndex((x) => x.id === id);
       const before = s.invoices[idx];
       const after = { ...before, ...patch, updatedAt: new Date().toISOString() };
+      const actor = s.session ? s.users.find((user) => user.uid === s.session!.uid) : null;
+      const isActivatingCredit =
+        before.type === "credit_note" &&
+        before.status === "draft" &&
+        patch.status !== undefined &&
+        patch.status !== "draft" &&
+        patch.status !== "cancelled";
+      if (isActivatingCredit && actor?.role === "sales") {
+        throw new Error("Manager approval is required to activate a credit note");
+      }
+      if (isActivatingCredit) {
+        after.approvalStatus = "approved";
+        after.approvedBy = actor?.uid ?? "system";
+        after.approvedAt = new Date().toISOString();
+      }
       s.invoices[idx] = after;
+
+      const beforeCounts = countsTowardSOInvoice(before);
+      const afterCounts = countsTowardSOInvoice(after);
+      const itemsChanged = JSON.stringify(before.items) !== JSON.stringify(after.items);
+      const doIdsChanged = JSON.stringify(before.doIds) !== JSON.stringify(after.doIds);
+      if (beforeCounts && afterCounts && (itemsChanged || doIdsChanged)) {
+        throw new Error("Issued invoice lines and delivery-order links cannot be edited. Cancel the invoice and create a replacement.");
+      }
+      if (!beforeCounts && afterCounts) {
+        validateAndLinkInvoiceDOs(s, after);
+        updateSOProgress(s, after.salesOrderId, after.items, "invoicedQty");
+      }
+      if (beforeCounts && !afterCounts) {
+        updateSOProgress(s, before.salesOrderId, before.items.map((it) => ({ ...it, quantity: -it.quantity })), "invoicedQty");
+        before.doIds.forEach((doId) => {
+          const d = s.deliveryOrders.find((x) => x.id === doId);
+          if (d && d.invoiceId === before.id) d.invoiceId = undefined;
+        });
+      }
 
       // Handle stock reversal for credit notes if transitioning from draft to sent/paid
       const isBecomingActive = before.status === "draft" && (after.status === "sent" || after.status === "paid" || after.status === "partial");
@@ -1094,6 +1309,10 @@ const stockMovements: DataAdapter["stockMovements"] = {
   },
   async adjust(productId, qty, reason, recordedBy) {
     return tx((s) => {
+      const actor = s.session ? s.users.find((user) => user.uid === s.session!.uid) : null;
+      if (!actor || (actor.role !== "admin" && actor.role !== "manager")) {
+        throw new Error("Manager approval is required for stock adjustments");
+      }
       const movement = applyStockChange(s, {
         productId,
         qty,
@@ -1126,6 +1345,7 @@ export const mockAdapter: DataAdapter = {
   async signIn(email) {
     const u = load().users.find((x) => x.email.toLowerCase() === email.toLowerCase());
     if (!u) throw new Error("Invalid credentials");
+    if (!u.active) throw new Error("This account has been deactivated");
     tx((s) => {
       s.session = { uid: u.uid };
     });
@@ -1161,7 +1381,14 @@ export const mockAdapter: DataAdapter = {
   async currentUser() {
     const s = load();
     if (!s.session) return null;
-    return s.users.find((u) => u.uid === s.session!.uid) ?? null;
+    const user = s.users.find((u) => u.uid === s.session!.uid) ?? null;
+    if (!user?.active) {
+      tx((store) => {
+        store.session = null;
+      });
+      return null;
+    }
+    return user;
   },
   async requestPasswordReset(email) {
     // Mock: just verify the user exists. In Firebase this triggers an actual email.
@@ -1177,6 +1404,18 @@ export const mockAdapter: DataAdapter = {
       entityLabel: u.email,
       summary: `Password reset requested for ${u.email}`,
     });
+  },
+  verification: {
+    async get(id) {
+      const s = load();
+      const invoice = s.invoices.find((item) => item.id === id);
+      if (invoice) return { kind: "invoice", doc: invoice };
+      const po = s.purchaseOrders.find((item) => item.id === id);
+      if (po) return { kind: "po", doc: po };
+      const deliveryOrder = s.deliveryOrders.find((item) => item.id === id);
+      if (deliveryOrder) return { kind: "do", doc: deliveryOrder };
+      return null;
+    },
   },
   settings,
   customers,

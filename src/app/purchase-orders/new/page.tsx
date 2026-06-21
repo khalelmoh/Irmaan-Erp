@@ -46,11 +46,17 @@ export default function NewPOPage() {
             createdBy: user?.uid ?? "",
           } as never);
           await logActivity(user, {
-            action: "po.create",
+            action:
+              created.approvalStatus === "pending"
+                ? "po.approval_requested"
+                : "po.create",
             entityType: "purchase_order",
             entityId: created.id,
             entityLabel: created.poNumber,
-            summary: `Created ${asDraft ? "draft " : ""}${created.poNumber} for ${supplier.name} (${currency(totals.total)})`,
+            summary:
+              created.approvalStatus === "pending"
+                ? `Created ${created.poNumber} and requested approval for ${supplier.name} (${currency(totals.total)})`
+                : `Created ${created.status === "draft" ? "draft " : ""}${created.poNumber} for ${supplier.name} (${currency(totals.total)})`,
             metadata: { supplierId: data.supplierId, total: totals.total },
           });
           router.push(`/purchase-orders/${created.id}`);

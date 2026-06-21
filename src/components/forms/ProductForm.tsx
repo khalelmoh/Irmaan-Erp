@@ -61,7 +61,12 @@ export function ProductForm({ initial, onSubmit, onCancel, submitLabel = "Save p
         <Input type="number" step="0.01" {...register("cost")} />
       </F>
       <F label="Stock *" err={errors.stock?.message}>
-        <Input type="number" {...register("stock")} />
+        <Input
+          type="number"
+          readOnly={!!initial?.id}
+          className={initial?.id ? "bg-slate-50 text-slate-500" : undefined}
+          {...register("stock")}
+        />
       </F>
       <F label="Reorder level" err={errors.reorderLevel?.message}>
         <Input type="number" {...register("reorderLevel")} />

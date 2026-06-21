@@ -148,10 +148,12 @@ export function DOPrintView({ doc, verifyUrl, allocations }: Props) {
       <section className="mt-10 grid grid-cols-3 gap-6 items-end">
         <SignatureBlock label="Issued by" name={doc.salespersonName} />
         <SignatureBlock label="Received by" name={doc.loadingDetails.driverName} />
-        <div className="text-center">
-          <QRBlock value={verifyUrl} size={110} className="mx-auto" />
-          <div className="text-[9px] text-slate-500 mt-1">Scan to verify · {doc.doNumber}</div>
-        </div>
+        {verifyUrl && (
+          <div className="text-center">
+            <QRBlock value={verifyUrl} size={110} className="mx-auto" />
+            <div className="text-[9px] text-slate-500 mt-1">Scan to verify · {doc.doNumber}</div>
+          </div>
+        )}
       </section>
 
       <section className="mt-8 grid grid-cols-2 gap-6">

@@ -37,6 +37,11 @@ export interface CompanySettings {
   invoiceFooter?: string;    // bank details, terms & conditions
 }
 
+export type VerificationResult =
+  | { kind: "do"; doc: DeliveryOrder }
+  | { kind: "invoice"; doc: Invoice }
+  | { kind: "po"; doc: PurchaseOrder };
+
 export interface DataAdapter {
   // auth
   signIn(email: string, password: string): Promise<User>;
@@ -44,6 +49,9 @@ export interface DataAdapter {
   currentUser(): Promise<User | null>;
   /** Sends a password reset email (Firebase) or stub-resets in mock. */
   requestPasswordReset(email: string): Promise<void>;
+  verification: {
+    get(id: string): Promise<VerificationResult | null>;
+  };
 
   // company settings
   settings: {
@@ -75,6 +83,12 @@ export interface DataAdapter {
   };
   purchaseOrders: Listable<PurchaseOrder> & {
     nextNumber(): Promise<string>;
+    requestApproval(poId: string): Promise<PurchaseOrder>;
+    decideApproval(
+      poId: string,
+      decision: "approved" | "rejected",
+      reason?: string,
+    ): Promise<PurchaseOrder>;
     /** Receive all remaining items; updates stock + status + receivedAt. */
     markFullyReceived(poId: string, receivedBy: string): Promise<PurchaseOrder>;
     /** Receive a partial quantity per item; updates stock proportionally. */

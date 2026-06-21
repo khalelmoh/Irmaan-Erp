@@ -61,15 +61,19 @@ export default function EditPOPage() {
             notes: data.notes ?? "",
           } as never);
 
-          const isIssue = asDraft === false;
+          const isIssue = updated.status === "sent";
+          const requestedApproval =
+            updated.status === "draft" && updated.approvalStatus === "pending";
           
           await logActivity(user, {
-            action: isIssue ? "po.confirm" : "po.update",
+            action: isIssue ? "po.confirm" : requestedApproval ? "po.approval_requested" : "po.update",
             entityType: "purchase_order",
             entityId: doc.id,
             entityLabel: doc.poNumber,
-            summary: isIssue 
+            summary: isIssue
               ? `Confirmed ${doc.poNumber} for ${supplier.name} (${currency(totals.total)})`
+              : requestedApproval
+                ? `Updated ${doc.poNumber} and requested approval`
               : `Updated draft ${doc.poNumber}`,
             diff: isIssue ? { status: { from: "draft", to: "sent" } } : undefined,
           });

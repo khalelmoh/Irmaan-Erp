@@ -7,16 +7,12 @@ import { Logo } from "@/components/layout/Logo";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, XCircle, Truck, FileText, ShoppingCart } from "lucide-react";
 import type { DeliveryOrder, Invoice, PurchaseOrder } from "@/types";
+import type { VerificationResult } from "@/services/types";
 import { COMPANY, currency, formatDateTime } from "@/lib/utils";
 import { STATUS_VARIANT, outstanding } from "@/lib/invoice";
 import { PO_STATUS_VARIANT, PO_STATUS_LABEL, poOutstanding, receiveProgress } from "@/lib/purchase-order";
 
-type Result =
-  | { kind: "do"; doc: DeliveryOrder }
-  | { kind: "invoice"; doc: Invoice }
-  | { kind: "po"; doc: PurchaseOrder }
-  | null
-  | undefined;
+type Result = VerificationResult | null | undefined;
 
 export default function VerifyPage() {
   const { id } = useParams<{ id: string }>();
@@ -24,15 +20,7 @@ export default function VerifyPage() {
 
   useEffect(() => {
     (async () => {
-      const [inv, doDoc, po] = await Promise.all([
-        dataAdapter.invoices.get(id),
-        dataAdapter.deliveryOrders.get(id),
-        dataAdapter.purchaseOrders.get(id),
-      ]);
-      if (inv) return setResult({ kind: "invoice", doc: inv });
-      if (po) return setResult({ kind: "po", doc: po });
-      if (doDoc) return setResult({ kind: "do", doc: doDoc });
-      setResult(null);
+      setResult(await dataAdapter.verification.get(id));
     })();
   }, [id]);
 

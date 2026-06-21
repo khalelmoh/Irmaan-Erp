@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import {
   Printer, ArrowLeft, Download, DollarSign, XCircle, Truck, PackageCheck,
+  ShieldCheck, ShieldX, Send,
 } from "lucide-react";
 import { currency, formatDateTime } from "@/lib/utils";
 import { PO_STATUS_VARIANT, PO_STATUS_LABEL, poOutstanding, receiveProgress } from "@/lib/purchase-order";
@@ -39,7 +40,7 @@ export default function POViewPage() {
   const [payOpen, setPayOpen] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     if (!params.id) return;
     const d = await dataAdapter.purchaseOrders.get(params.id);
     setDoc(d);
@@ -54,9 +55,9 @@ export default function POViewPage() {
       const data = await QRCode.toDataURL(url, { margin: 1, width: 200, color: { dark: "#0b1e3f", light: "#ffffff" } });
       setQrDataUrl(data);
     }
-  }
+  }, [params.id]);
 
-  useEffect(() => { refresh(); }, [params.id]);
+  useEffect(() => { refresh(); }, [refresh]);
 
   if (!doc) return <div className="text-sm text-slate-500">Loading purchase order…</div>;
 
@@ -64,6 +65,10 @@ export default function POViewPage() {
   const prog = receiveProgress(doc);
   const canReceive = doc.status !== "cancelled" && doc.status !== "received" && doc.status !== "draft";
   const canPay = doc.status !== "cancelled" && out > 0 && doc.status !== "draft";
+  const approvalStatus = doc.approvalStatus ?? "not_requested";
+  const canConfirm =
+    doc.status === "draft" &&
+    (user?.role === "admin" || approvalStatus === "approved");
 
   async function markCancelled() {
     if (!doc) return;
@@ -98,6 +103,33 @@ export default function POViewPage() {
     }
   }
 
+  async function requestApproval() {
+    if (!doc) return;
+    setErr(null);
+    try {
+      await dataAdapter.purchaseOrders.requestApproval(doc.id);
+      refresh();
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Failed to request approval");
+    }
+  }
+
+  async function decideApproval(decision: "approved" | "rejected") {
+    if (!doc) return;
+    const reason =
+      decision === "rejected"
+        ? prompt("Why is this purchase order being rejected?")?.trim()
+        : undefined;
+    if (decision === "rejected" && !reason) return;
+    setErr(null);
+    try {
+      await dataAdapter.purchaseOrders.decideApproval(doc.id, decision, reason);
+      refresh();
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Failed to record approval decision");
+    }
+  }
+
   return (
     <div>
       {err && (
@@ -114,12 +146,45 @@ export default function POViewPage() {
             <div className="text-xl font-semibold tracking-tight">{doc.poNumber}</div>
           </div>
           <Badge variant={PO_STATUS_VARIANT[doc.status]}>{PO_STATUS_LABEL[doc.status]}</Badge>
+          {doc.status === "draft" && approvalStatus !== "not_requested" && (
+            <Badge
+              variant={
+                approvalStatus === "approved"
+                  ? "success"
+                  : approvalStatus === "rejected"
+                    ? "danger"
+                    : "warning"
+              }
+            >
+              {approvalStatus === "pending" ? "Approval pending" : approvalStatus}
+            </Badge>
+          )}
           {out > 0 && doc.status !== "draft" && (
             <span className="text-xs text-slate-500">Owed: <span className="font-medium text-red-700">{currency(out)}</span></span>
           )}
         </div>
         <div className="flex items-center gap-2">
-          {doc.status === "draft" && (
+          {doc.status === "draft" &&
+            user?.role === "manager" &&
+            approvalStatus !== "pending" &&
+            approvalStatus !== "approved" && (
+            <Button onClick={requestApproval} variant="outline">
+              <Send className="h-4 w-4" /> Request approval
+            </Button>
+          )}
+          {doc.status === "draft" &&
+            user?.role === "admin" &&
+            approvalStatus === "pending" && (
+            <>
+              <Button onClick={() => decideApproval("approved")}>
+                <ShieldCheck className="h-4 w-4" /> Approve
+              </Button>
+              <Button variant="destructive" onClick={() => decideApproval("rejected")}>
+                <ShieldX className="h-4 w-4" /> Reject
+              </Button>
+            </>
+          )}
+          {canConfirm && approvalStatus !== "pending" && (
             <Button onClick={confirmOrder} className="bg-blue-600 hover:bg-blue-700">
               <PackageCheck className="h-4 w-4" /> Confirm Order
             </Button>

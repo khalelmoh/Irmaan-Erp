@@ -20,19 +20,19 @@ import {
 import { cn } from "@/lib/utils";
 import { Logo } from "./Logo";
 import { useAuth } from "@/contexts/AuthContext";
+import type { Role } from "@/types";
 
-type Role = "admin" | "manager" | "sales" | "warehouse";
 const nav: { href: string; label: string; icon: typeof Users; roles?: Role[] }[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/customers", label: "Customers", icon: Users },
-  { href: "/suppliers", label: "Suppliers", icon: Building2 },
+  { href: "/suppliers", label: "Suppliers", icon: Building2, roles: ["admin", "manager", "warehouse"] },
   { href: "/products", label: "Products", icon: Package },
-  { href: "/inventory/movements", label: "Stock Movements", icon: History },
+  { href: "/inventory/movements", label: "Stock Movements", icon: History, roles: ["admin", "manager", "warehouse"] },
   { href: "/sales-orders", label: "Sales Orders", icon: ClipboardList },
   { href: "/delivery-orders", label: "Delivery Orders", icon: Truck },
-  { href: "/purchase-orders", label: "Purchase Orders", icon: ShoppingCart },
-  { href: "/invoices", label: "Invoices", icon: FileText },
-  { href: "/reports", label: "Reports", icon: BarChart3 },
+  { href: "/purchase-orders", label: "Purchase Orders", icon: ShoppingCart, roles: ["admin", "manager", "warehouse"] },
+  { href: "/invoices", label: "Invoices", icon: FileText, roles: ["admin", "manager", "sales"] },
+  { href: "/reports", label: "Reports", icon: BarChart3, roles: ["admin", "manager"] },
   { href: "/audit", label: "Audit Log", icon: ShieldCheck, roles: ["admin", "manager"] },
   { href: "/users", label: "Users", icon: UserCog, roles: ["admin"] },
 ];

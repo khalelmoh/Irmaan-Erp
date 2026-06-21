@@ -16,10 +16,10 @@ import {
   updateDoc,
   deleteDoc,
   serverTimestamp,
-  runTransaction,
   query,
   where,
   orderBy,
+  limit as queryLimit,
 } from "firebase/firestore";
 import {
   signInWithEmailAndPassword,
@@ -27,14 +27,22 @@ import {
   onAuthStateChanged,
   sendPasswordResetEmail,
 } from "firebase/auth";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import { getFirebase } from "@/lib/firebase";
-import type { DataAdapter, Listable } from "./types";
+import type {
+  CompanySettings,
+  DataAdapter,
+  Listable,
+  VerificationResult,
+} from "./types";
 import type {
   Customer,
   Supplier,
   Product,
   DeliveryOrder,
   PurchaseOrder,
+  POAllocation,
+  SalesOrder,
   Invoice,
   Payment,
   SupplierPayment,
@@ -44,12 +52,40 @@ import type {
 } from "@/types";
 import { padNumber } from "@/lib/utils";
 
+const DEFAULT_FIREBASE_SETTINGS: CompanySettings = {
+  companyName: "Irmaan Trading & Logistics",
+  address: "Hargeisa, Somaliland",
+  phone: "+252 63 4 000 000",
+  email: "info@irmaan.co",
+  taxId: "",
+  currency: "USD",
+  currencySymbol: "$",
+  defaultTaxRate: 0.05,
+  defaultPaymentTerms: 30,
+  invoiceFooter: "",
+};
+
+const MAX_QUERY_DOCUMENTS = 2000;
+
+function assertQueryBound(size: number, label: string) {
+  if (size > MAX_QUERY_DOCUMENTS) {
+    throw new Error(
+      `${label} exceeds ${MAX_QUERY_DOCUMENTS.toLocaleString()} records. Use a filtered report or add cursor pagination.`,
+    );
+  }
+}
+
 function crud<T extends { id: string }>(name: string): Listable<T> {
   return {
     async list() {
       const { db } = getFirebase();
-      const q = query(collection(db, name), orderBy("createdAt", "desc"));
+      const q = query(
+        collection(db, name),
+        orderBy("createdAt", "desc"),
+        queryLimit(MAX_QUERY_DOCUMENTS + 1),
+      );
       const snap = await getDocs(q);
+      assertQueryBound(snap.size, name);
       return snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) })) as T[];
     },
     async get(id) {
@@ -82,13 +118,9 @@ function crud<T extends { id: string }>(name: string): Listable<T> {
 
 async function nextSequence(name: string, prefix: string, width = 5) {
   const { db } = getFirebase();
-  return runTransaction(db, async (tx) => {
-    const ref = doc(db, "counters", name);
-    const snap = await tx.get(ref);
-    const next = (snap.exists() ? (snap.data().value as number) : 0) + 1;
-    tx.set(ref, { value: next }, { merge: true });
-    return `${prefix}-${padNumber(next, width)}`;
-  });
+  const snap = await getDoc(doc(db, "counters", name));
+  const next = (snap.exists() ? (snap.data().value as number) : 0) + 1;
+  return `${prefix}-${padNumber(next, width)}`;
 }
 
 export const firebaseAdapter: DataAdapter = {
@@ -96,8 +128,16 @@ export const firebaseAdapter: DataAdapter = {
     const { auth, db } = getFirebase();
     const cred = await signInWithEmailAndPassword(auth, email, password);
     const profile = await getDoc(doc(db, "users", cred.user.uid));
-    if (!profile.exists()) throw new Error("User profile missing");
-    return { uid: cred.user.uid, ...(profile.data() as object) } as User;
+    if (!profile.exists()) {
+      await fbSignOut(auth);
+      throw new Error("User profile missing");
+    }
+    const user = { uid: cred.user.uid, ...(profile.data() as object) } as User;
+    if (!user.active) {
+      await fbSignOut(auth);
+      throw new Error("This account has been deactivated");
+    }
+    return user;
   },
   async signOut() {
     const { auth } = getFirebase();
@@ -109,7 +149,16 @@ export const firebaseAdapter: DataAdapter = {
       onAuthStateChanged(auth, async (u) => {
         if (!u) return resolve(null);
         const p = await getDoc(doc(db, "users", u.uid));
-        resolve(p.exists() ? ({ uid: u.uid, ...(p.data() as object) } as User) : null);
+        if (!p.exists()) {
+          await fbSignOut(auth);
+          return resolve(null);
+        }
+        const user = { uid: u.uid, ...(p.data() as object) } as User;
+        if (!user.active) {
+          await fbSignOut(auth);
+          return resolve(null);
+        }
+        resolve(user);
       });
     });
   },
@@ -117,150 +166,302 @@ export const firebaseAdapter: DataAdapter = {
     const { auth } = getFirebase();
     await sendPasswordResetEmail(auth, email);
   },
+  verification: {
+    async get(id) {
+      const { app } = getFirebase();
+      const verify = httpsCallable<
+        { id: string },
+        VerificationResult | null
+      >(getFunctions(app), "verifyDocument");
+      const result = await verify({ id });
+      return result.data;
+    },
+  },
   settings: {
     async get() {
-      // Stub
-      return {
-        companyName: "Irmaan Trading & Logistics",
-        address: "Hargeisa, Somaliland",
-        phone: "+252 63 4 000 000",
-        email: "info@irmaan.co",
-        currency: "USD",
-        currencySymbol: "$",
-        defaultTaxRate: 0.05,
-        defaultPaymentTerms: 30,
-      };
+      const { db } = getFirebase();
+      const snap = await getDoc(doc(db, "settings", "company"));
+      return snap.exists()
+        ? { ...DEFAULT_FIREBASE_SETTINGS, ...(snap.data() as object) }
+        : DEFAULT_FIREBASE_SETTINGS;
     },
     async update(patch) {
-      // Stub
-      return {
-        companyName: "Irmaan Trading & Logistics",
-        address: "Hargeisa, Somaliland",
-        phone: "+252 63 4 000 000",
-        email: "info@irmaan.co",
-        currency: "USD",
-        currencySymbol: "$",
-        defaultTaxRate: 0.05,
-        defaultPaymentTerms: 30,
-        ...patch,
-      };
+      const { db } = getFirebase();
+      const ref = doc(db, "settings", "company");
+      await setDoc(ref, { ...patch, updatedAt: serverTimestamp() }, { merge: true });
+      const snap = await getDoc(ref);
+      return { ...DEFAULT_FIREBASE_SETTINGS, ...(snap.data() as object) };
     },
   },
-  customers: crud<Customer>("customers"),
-  suppliers: crud<Supplier>("suppliers"),
-  products: crud<Product>("products"),
-  salesOrders: {
-    ...crud<import("@/types").SalesOrder>("sales_orders"),
-    nextNumber: () => nextSequence("sales_orders", "SO"),
-    async confirm(soId) { throw new Error("Not implemented in firebase adapter"); },
-    async updateDeliveredQty(soId, items) { throw new Error("Not implemented in firebase adapter"); },
-    async updateInvoicedQty(soId, items) { throw new Error("Not implemented in firebase adapter"); },
+  customers: {
+    ...crud<Customer>("customers"),
+    async create(input) {
+      const { app, db } = getFirebase();
+      const create = httpsCallable<
+        { document: Record<string, unknown> },
+        { id: string }
+      >(getFunctions(app), "createCustomer");
+      const result = await create({ document: input as Record<string, unknown> });
+      const snap = await getDoc(doc(db, "customers", result.data.id));
+      if (!snap.exists()) throw new Error("Customer was not created");
+      return { id: snap.id, ...(snap.data() as object) } as Customer;
+    },
   },
-  // NOTE: when running against Firebase, DO creation should also write stock_movements
-  // via a Cloud Function trigger. The thin client version of recordPayment is fine for v1;
-  // stock_movements for DOs/POs created from the UI will fall back to mockAdapter behavior
-  // in dev — add a Cloud Function `onDOCreate` for production.
+  suppliers: {
+    ...crud<Supplier>("suppliers"),
+    async create(input) {
+      const { app, db } = getFirebase();
+      const create = httpsCallable<
+        { document: Record<string, unknown> },
+        { id: string }
+      >(getFunctions(app), "createSupplier");
+      const result = await create({ document: input as Record<string, unknown> });
+      const snap = await getDoc(doc(db, "suppliers", result.data.id));
+      if (!snap.exists()) throw new Error("Supplier was not created");
+      return { id: snap.id, ...(snap.data() as object) } as Supplier;
+    },
+  },
+  products: {
+    ...crud<Product>("products"),
+    async create(input) {
+      const { app, db } = getFirebase();
+      const create = httpsCallable<
+        { document: Record<string, unknown> },
+        { id: string }
+      >(getFunctions(app), "createProduct");
+      const result = await create({ document: input as Record<string, unknown> });
+      const snap = await getDoc(doc(db, "products", result.data.id));
+      if (!snap.exists()) throw new Error("Product was not created");
+      return { id: snap.id, ...(snap.data() as object) } as Product;
+    },
+  },
+  salesOrders: {
+    ...crud<SalesOrder>("sales_orders"),
+    nextNumber: () => nextSequence("sales_orders", "SO"),
+    async create(input) {
+      const { app, db } = getFirebase();
+      const create = httpsCallable<
+        { document: Record<string, unknown> },
+        { id: string }
+      >(getFunctions(app), "createSalesOrder");
+      const result = await create({ document: input as Record<string, unknown> });
+      const snap = await getDoc(doc(db, "sales_orders", result.data.id));
+      if (!snap.exists()) throw new Error("Sales order was not created");
+      return { id: snap.id, ...(snap.data() as object) } as SalesOrder;
+    },
+    async update(id, patch) {
+      const keys = Object.keys(patch).filter((key) => key !== "id");
+      if (keys.length !== 1 || keys[0] !== "status") {
+        throw new Error("Sales order terms cannot be edited after creation");
+      }
+      const status = patch.status;
+      if (status !== "confirmed" && status !== "cancelled") {
+        throw new Error("Unsupported sales-order transition");
+      }
+      const { app, db } = getFirebase();
+      const transition = httpsCallable<
+        { id: string; status: string },
+        { id: string }
+      >(getFunctions(app), "transitionSalesOrder");
+      await transition({ id, status });
+      const updated = await getDoc(doc(db, "sales_orders", id));
+      if (!updated.exists()) throw new Error("Sales order not found");
+      return { id: updated.id, ...(updated.data() as object) } as SalesOrder;
+    },
+    async confirm(soId) {
+      return firebaseAdapter.salesOrders.update(soId, { status: "confirmed" });
+    },
+    async updateDeliveredQty(soId, items) {
+      void soId;
+      void items;
+      throw new Error("Sales-order delivery progress is managed by delivery-order transactions");
+    },
+    async updateInvoicedQty(soId, items) {
+      void soId;
+      void items;
+      throw new Error("Sales-order invoice progress is managed by invoice transactions");
+    },
+  },
   deliveryOrders: {
     ...crud<DeliveryOrder>("delivery_orders"),
     nextNumber: () => nextSequence("delivery_orders", "DO"),
+    async create(input) {
+      const { app, db } = getFirebase();
+      const createDO = httpsCallable<
+        { document: Record<string, unknown> },
+        { id: string }
+      >(getFunctions(app), "createDeliveryOrder");
+      const result = await createDO({ document: input as Record<string, unknown> });
+      const snap = await getDoc(doc(db, "delivery_orders", result.data.id));
+      if (!snap.exists()) throw new Error("Delivery order was not created");
+      return { id: snap.id, ...(snap.data() as object) } as DeliveryOrder;
+    },
+    async update(id, patch) {
+      const { app, db } = getFirebase();
+      const ref = doc(db, "delivery_orders", id);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) throw new Error("Delivery order not found");
+      const current = { id: snap.id, ...(snap.data() as object) } as DeliveryOrder;
+      const targetStatus = patch.status ?? current.status;
+      const isTransition = targetStatus !== current.status;
+
+      if (!isTransition) {
+        if (current.status !== "draft") {
+          throw new Error("Issued delivery orders cannot be edited");
+        }
+        const { id: _id, doNumber: _doNumber, ...safePatch } = patch;
+        await updateDoc(ref, {
+          ...safePatch,
+          status: "draft",
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        if (current.status === "draft" && targetStatus === "issued") {
+          const { id: _id, doNumber: _doNumber, status: _status, ...draftPatch } = patch;
+          if (Object.keys(draftPatch).length > 0) {
+            await updateDoc(ref, {
+              ...draftPatch,
+              status: "draft",
+              updatedAt: serverTimestamp(),
+            });
+          }
+        } else if (
+          !(
+            (current.status === "issued" && targetStatus === "delivered") ||
+            (current.status === "draft" && targetStatus === "cancelled") ||
+            ((current.status === "issued" || current.status === "delivered") &&
+              targetStatus === "cancelled")
+          )
+        ) {
+          throw new Error(`Unsupported delivery-order transition from ${current.status} to ${targetStatus}`);
+        }
+        const transition = httpsCallable<
+          { id: string; status: string },
+          { id: string }
+        >(getFunctions(app), "transitionDeliveryOrder");
+        await transition({ id, status: targetStatus });
+      }
+
+      const updated = await getDoc(ref);
+      return { id: updated.id, ...(updated.data() as object) } as DeliveryOrder;
+    },
   },
   purchaseOrders: {
     ...crud<PurchaseOrder>("purchase_orders"),
     nextNumber: () => nextSequence("purchase_orders", "PO"),
-    async markFullyReceived(poId, _receivedBy) {
-      // In production this should be a Cloud Function (atomic stock updates + audit).
+    async requestApproval(poId) {
+      const { app, db } = getFirebase();
+      const requestApproval = httpsCallable<{ id: string }, { id: string }>(
+        getFunctions(app),
+        "requestPurchaseOrderApproval",
+      );
+      await requestApproval({ id: poId });
+      const updated = await getDoc(doc(db, "purchase_orders", poId));
+      if (!updated.exists()) throw new Error("Purchase order not found");
+      return { id: updated.id, ...(updated.data() as object) } as PurchaseOrder;
+    },
+    async decideApproval(poId, decision, reason) {
+      const { app, db } = getFirebase();
+      const decideApproval = httpsCallable<
+        { id: string; decision: "approved" | "rejected"; reason?: string },
+        { id: string }
+      >(getFunctions(app), "decidePurchaseOrderApproval");
+      await decideApproval({ id: poId, decision, reason });
+      const updated = await getDoc(doc(db, "purchase_orders", poId));
+      if (!updated.exists()) throw new Error("Purchase order not found");
+      return { id: updated.id, ...(updated.data() as object) } as PurchaseOrder;
+    },
+    async create(input) {
+      const { app, db } = getFirebase();
+      const create = httpsCallable<
+        { document: Record<string, unknown> },
+        { id: string }
+      >(getFunctions(app), "createPurchaseOrder");
+      const result = await create({ document: input as Record<string, unknown> });
+      const created = await getDoc(doc(db, "purchase_orders", result.data.id));
+      if (!created.exists()) throw new Error("Purchase order was not created");
+      return { id: created.id, ...(created.data() as object) } as PurchaseOrder;
+    },
+    async update(id, patch) {
+      const { app, db } = getFirebase();
+      const keys = Object.keys(patch).filter((key) => key !== "id");
+      const statusOnly = keys.length === 1 && keys[0] === "status";
+      if (statusOnly) {
+        if (patch.status !== "sent" && patch.status !== "cancelled") {
+          throw new Error("Unsupported purchase-order transition");
+        }
+        const transition = httpsCallable<
+          { id: string; status: string },
+          { id: string }
+        >(getFunctions(app), "transitionPurchaseOrder");
+        await transition({ id, status: patch.status });
+      } else {
+        const update = httpsCallable<
+          { id: string; document: Record<string, unknown> },
+          { id: string }
+        >(getFunctions(app), "updatePurchaseOrder");
+        await update({ id, document: patch as Record<string, unknown> });
+      }
+      const updated = await getDoc(doc(db, "purchase_orders", id));
+      if (!updated.exists()) throw new Error("Purchase order not found");
+      return { id: updated.id, ...(updated.data() as object) } as PurchaseOrder;
+    },
+    async markFullyReceived(poId, receivedBy) {
       const { db } = getFirebase();
       const ref = doc(db, "purchase_orders", poId);
       const snap = await getDoc(ref);
-      if (!snap.exists()) throw new Error("PO not found");
+      if (!snap.exists()) throw new Error("Purchase order not found");
       const po = snap.data() as PurchaseOrder;
-      await updateDoc(ref, {
-        items: po.items.map((it) => ({ ...it, receivedQty: it.quantity })),
-        status: "received",
-        receivedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-      // Bump stock on each product (best-effort; a CF would do this atomically)
-      for (const it of po.items) {
-        const pRef = doc(db, "products", it.productId);
-        const pSnap = await getDoc(pRef);
-        if (pSnap.exists()) {
-          const remaining = it.quantity - (it.receivedQty ?? 0);
-          await updateDoc(pRef, {
-            stock: (pSnap.data().stock as number) + remaining,
-            updatedAt: serverTimestamp(),
-          });
-        }
+      const receipts = po.items
+        .map((item) => ({
+          productId: item.productId,
+          quantity: item.quantity - (item.receivedQty ?? 0),
+        }))
+        .filter((receipt) => receipt.quantity > 0.001);
+      if (receipts.length === 0) {
+        return { id: snap.id, ...(snap.data() as object) } as PurchaseOrder;
       }
-      const updated = await getDoc(ref);
-      return { id: updated.id, ...(updated.data() as object) } as PurchaseOrder;
+      return firebaseAdapter.purchaseOrders.receiveItems(poId, receipts, receivedBy);
     },
-    async receiveItems(poId, receipts, _receivedBy) {
-      const { db } = getFirebase();
-      const ref = doc(db, "purchase_orders", poId);
-      await runTransaction(db, async (tx) => {
-        const snap = await tx.get(ref);
-        if (!snap.exists()) throw new Error("PO not found");
-        const po = snap.data() as PurchaseOrder;
-        const newItems = po.items.map((it) => {
-          const r = receipts.find((x) => x.productId === it.productId);
-          if (!r) return it;
-          return { ...it, receivedQty: (it.receivedQty ?? 0) + r.quantity };
-        });
-        const totalOrdered = newItems.reduce((s, i) => s + i.quantity, 0);
-        const totalRec = newItems.reduce((s, i) => s + (i.receivedQty ?? 0), 0);
-        const status = totalRec <= 0 ? "sent" : totalRec + 0.001 >= totalOrdered ? "received" : "partial_received";
-        tx.update(ref, { items: newItems, status, updatedAt: serverTimestamp() });
-      });
-      // Stock updates (separate, ideally a CF)
-      for (const r of receipts) {
-        const pRef = doc(db, "products", r.productId);
-        const pSnap = await getDoc(pRef);
-        if (pSnap.exists()) {
-          await updateDoc(pRef, {
-            stock: (pSnap.data().stock as number) + r.quantity,
-            updatedAt: serverTimestamp(),
-          });
-        }
-      }
-      const updated = await getDoc(ref);
+    async receiveItems(poId, receipts, receivedBy) {
+      const { app, db } = getFirebase();
+      const receive = httpsCallable<
+        {
+          purchaseOrderId: string;
+          receipts: Array<{ productId: string; quantity: number }>;
+        },
+        { id: string }
+      >(getFunctions(app), "receivePurchaseOrder");
+      await receive({ purchaseOrderId: poId, receipts });
+      const updated = await getDoc(doc(db, "purchase_orders", poId));
+      if (!updated.exists()) throw new Error("Purchase order not found after receipt");
       return { id: updated.id, ...(updated.data() as object) } as PurchaseOrder;
     },
     async recordPayment(poId, paymentInput) {
-      const { db } = getFirebase();
+      const { app, db } = getFirebase();
       const poRef = doc(db, "purchase_orders", poId);
-      const result = await runTransaction(db, async (tx) => {
-        const snap = await tx.get(poRef);
-        if (!snap.exists()) throw new Error("PO not found");
-        const po = snap.data() as PurchaseOrder;
-        const remaining = po.total - (po.amountPaid || 0);
-        if (paymentInput.amount > remaining + 0.01) throw new Error("Payment exceeds outstanding balance");
-        const newPaid = (po.amountPaid || 0) + paymentInput.amount;
-        tx.update(poRef, { amountPaid: newPaid, updatedAt: serverTimestamp() });
-        const payRef = doc(collection(db, "supplier_payments"));
-        tx.set(payRef, {
-          ...paymentInput,
-          purchaseOrderId: poId,
-          poNumber: po.poNumber,
-          supplierId: po.supplierId,
-          createdAt: serverTimestamp(),
-        });
-        return { po: { ...po, amountPaid: newPaid } as PurchaseOrder, paymentId: payRef.id };
-      });
-      const fullPayment: SupplierPayment = {
-        id: result.paymentId,
+      const postPayment = httpsCallable<
+        { purchaseOrderId: string; payment: Record<string, unknown> },
+        { purchaseOrderId: string; paymentId: string }
+      >(getFunctions(app), "recordSupplierPayment");
+      const result = await postPayment({
         purchaseOrderId: poId,
-        poNumber: result.po.poNumber,
-        supplierId: result.po.supplierId,
-        amount: paymentInput.amount,
-        method: paymentInput.method,
-        reference: paymentInput.reference,
-        paidAt: paymentInput.paidAt,
-        recordedBy: paymentInput.recordedBy,
-        notes: paymentInput.notes,
-        createdAt: new Date().toISOString(),
+        payment: paymentInput as Record<string, unknown>,
+      });
+      const [poSnap, paymentSnap] = await Promise.all([
+        getDoc(poRef),
+        getDoc(doc(db, "supplier_payments", result.data.paymentId)),
+      ]);
+      if (!poSnap.exists() || !paymentSnap.exists()) {
+        throw new Error("Supplier payment was not committed");
+      }
+      return {
+        po: { id: poSnap.id, ...(poSnap.data() as object) } as PurchaseOrder,
+        payment: {
+          id: paymentSnap.id,
+          ...(paymentSnap.data() as object),
+        } as SupplierPayment,
       };
-      return { po: result.po, payment: fullPayment };
     },
     async payments(poId) {
       const { db } = getFirebase();
@@ -268,58 +469,146 @@ export const firebaseAdapter: DataAdapter = {
       return snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) })) as SupplierPayment[];
     },
     async availableStock(productId) {
-      return []; // Stub for Firebase adapter, implement Cloud Function for production
+      const { app } = getFirebase();
+      const getAvailable = httpsCallable<
+        { productId: string },
+        Array<{ poId: string; poNumber: string; orderDate: string; remaining: number }>
+      >(getFunctions(app), "getAvailablePOStock");
+      const result = await getAvailable({ productId });
+      return result.data;
     },
   },
   poAllocations: {
-    async list() { return []; },
-    async byDeliveryOrder(doId) { return []; },
-    async byPurchaseOrder(poId) { return []; },
+    async list() {
+      const { db } = getFirebase();
+      const snap = await getDocs(query(
+        collection(db, "po_allocations"),
+        orderBy("allocatedAt", "desc"),
+        queryLimit(MAX_QUERY_DOCUMENTS + 1),
+      ));
+      assertQueryBound(snap.size, "PO allocations");
+      return snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) })) as POAllocation[];
+    },
+    async byDeliveryOrder(doId) {
+      const { db } = getFirebase();
+      const snap = await getDocs(
+        query(collection(db, "po_allocations"), where("deliveryOrderId", "==", doId)),
+      );
+      return snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) })) as POAllocation[];
+    },
+    async byPurchaseOrder(poId) {
+      const { db } = getFirebase();
+      const snap = await getDocs(
+        query(collection(db, "po_allocations"), where("purchaseOrderId", "==", poId)),
+      );
+      return snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) })) as POAllocation[];
+    },
   },
   invoices: {
     ...crud<Invoice>("invoices"),
     nextNumber: () => nextSequence("invoices", "INV"),
-    async recordPayment(invoiceId, paymentInput) {
-      // In production this should be a Cloud Function (transactional + audit).
-      // The thin client version below is fine for v1.
-      const { db } = getFirebase();
-      const invRef = doc(db, "invoices", invoiceId);
-      const result = await runTransaction(db, async (tx) => {
-        const snap = await tx.get(invRef);
-        if (!snap.exists()) throw new Error("Invoice not found");
-        const inv = snap.data() as Invoice;
-        const remaining = inv.total - (inv.amountPaid || 0);
-        if (paymentInput.amount > remaining + 0.01) {
-          throw new Error("Payment exceeds outstanding balance");
+    async create(input) {
+      const { app, db } = getFirebase();
+      const createInvoice = httpsCallable<
+        { document: Record<string, unknown> },
+        { id: string }
+      >(getFunctions(app), "createInvoice");
+      const result = await createInvoice({ document: input as Record<string, unknown> });
+      const snap = await getDoc(doc(db, "invoices", result.data.id));
+      if (!snap.exists()) throw new Error("Invoice was not created");
+      return { id: snap.id, ...(snap.data() as object) } as Invoice;
+    },
+    async update(id, patch) {
+      const { app, db } = getFirebase();
+      const ref = doc(db, "invoices", id);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) throw new Error("Invoice not found");
+      const current = { id: snap.id, ...(snap.data() as object) } as Invoice;
+      const targetStatus = patch.status ?? current.status;
+      const isTransition = targetStatus !== current.status;
+
+      if (!isTransition) {
+        if (current.status !== "draft") {
+          throw new Error("Issued invoices cannot be edited");
         }
-        const newPaid = (inv.amountPaid || 0) + paymentInput.amount;
-        const newStatus =
-          newPaid + 0.001 >= inv.total ? "paid" : "partial";
-        tx.update(invRef, { amountPaid: newPaid, status: newStatus, updatedAt: serverTimestamp() });
-        const payRef = doc(collection(db, "payments"));
-        tx.set(payRef, {
-          ...paymentInput,
-          invoiceId,
-          invoiceNumber: inv.invoiceNumber,
-          customerId: inv.customerId,
-          createdAt: serverTimestamp(),
+        if (patch.amountPaid !== undefined && patch.amountPaid !== current.amountPaid) {
+          throw new Error("Use the payment workflow to change amount paid");
+        }
+        const {
+          id: _id,
+          invoiceNumber: _invoiceNumber,
+          amountPaid: _amountPaid,
+          status: _status,
+          ...draftPatch
+        } = patch;
+        await updateDoc(ref, {
+          ...draftPatch,
+          status: "draft",
+          updatedAt: serverTimestamp(),
         });
-        return { invoice: { ...inv, amountPaid: newPaid, status: newStatus } as Invoice, paymentId: payRef.id };
-      });
-      const fullPayment: Payment = {
-        id: result.paymentId,
+      } else {
+        if (current.status === "draft" && targetStatus === "sent") {
+          const {
+            id: _id,
+            invoiceNumber: _invoiceNumber,
+            amountPaid: _amountPaid,
+            status: _status,
+            ...draftPatch
+          } = patch;
+          if (Object.keys(draftPatch).length > 0) {
+            await updateDoc(ref, {
+              ...draftPatch,
+              status: "draft",
+              updatedAt: serverTimestamp(),
+            });
+          }
+        } else if (
+          !(
+            current.status !== "draft" &&
+            current.status !== "cancelled" &&
+            targetStatus === "cancelled"
+          )
+        ) {
+          throw new Error(`Unsupported invoice transition from ${current.status} to ${targetStatus}`);
+        }
+        const transition = httpsCallable<
+          { id: string; status: string },
+          { id: string }
+        >(getFunctions(app), "transitionInvoice");
+        await transition({ id, status: targetStatus });
+      }
+
+      const updated = await getDoc(ref);
+      return { id: updated.id, ...(updated.data() as object) } as Invoice;
+    },
+    async recordPayment(invoiceId, paymentInput) {
+      const { app, db } = getFirebase();
+      const invRef = doc(db, "invoices", invoiceId);
+      const postPayment = httpsCallable<
+        { invoiceId: string; payment: Record<string, unknown> },
+        { invoiceId: string; paymentId: string }
+      >(getFunctions(app), "recordInvoicePayment");
+      const result = await postPayment({
         invoiceId,
-        invoiceNumber: result.invoice.invoiceNumber,
-        customerId: result.invoice.customerId,
-        amount: paymentInput.amount,
-        method: paymentInput.method,
-        reference: paymentInput.reference,
-        paidAt: paymentInput.paidAt,
-        recordedBy: paymentInput.recordedBy,
-        notes: paymentInput.notes,
-        createdAt: new Date().toISOString(),
+        payment: paymentInput as Record<string, unknown>,
+      });
+      const [invoiceSnap, paymentSnap] = await Promise.all([
+        getDoc(invRef),
+        getDoc(doc(db, "payments", result.data.paymentId)),
+      ]);
+      if (!invoiceSnap.exists() || !paymentSnap.exists()) {
+        throw new Error("Invoice payment was not committed");
+      }
+      return {
+        invoice: {
+          id: invoiceSnap.id,
+          ...(invoiceSnap.data() as object),
+        } as Invoice,
+        payment: {
+          id: paymentSnap.id,
+          ...(paymentSnap.data() as object),
+        } as Payment,
       };
-      return { invoice: result.invoice, payment: fullPayment };
     },
     async payments(invoiceId) {
       const { db } = getFirebase();
@@ -330,7 +619,12 @@ export const firebaseAdapter: DataAdapter = {
   payments: {
     async list() {
       const { db } = getFirebase();
-      const snap = await getDocs(query(collection(db, "payments"), orderBy("createdAt", "desc")));
+      const snap = await getDocs(query(
+        collection(db, "payments"),
+        orderBy("createdAt", "desc"),
+        queryLimit(MAX_QUERY_DOCUMENTS + 1),
+      ));
+      assertQueryBound(snap.size, "Customer payments");
       return snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) })) as Payment[];
     },
     async byCustomer(customerId) {
@@ -342,7 +636,12 @@ export const firebaseAdapter: DataAdapter = {
   supplierPayments: {
     async list() {
       const { db } = getFirebase();
-      const snap = await getDocs(query(collection(db, "supplier_payments"), orderBy("createdAt", "desc")));
+      const snap = await getDocs(query(
+        collection(db, "supplier_payments"),
+        orderBy("createdAt", "desc"),
+        queryLimit(MAX_QUERY_DOCUMENTS + 1),
+      ));
+      assertQueryBound(snap.size, "Supplier payments");
       return snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) })) as SupplierPayment[];
     },
     async bySupplier(supplierId) {
@@ -357,9 +656,11 @@ export const firebaseAdapter: DataAdapter = {
       const constraints: import("firebase/firestore").QueryConstraint[] = [orderBy("at", "desc")];
       if (filter?.actorUid) constraints.unshift(where("actorUid", "==", filter.actorUid));
       if (filter?.entityType) constraints.unshift(where("entityType", "==", filter.entityType));
+      const requestedLimit = Math.min(filter?.limit ?? 250, MAX_QUERY_DOCUMENTS);
+      constraints.push(queryLimit(requestedLimit));
       const snap = await getDocs(query(collection(db, "activity_logs"), ...constraints));
       const all = snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) })) as ActivityLog[];
-      return filter?.limit ? all.slice(0, filter.limit) : all;
+      return all;
     },
     async byEntity(entityType, entityId) {
       const { db } = getFirebase();
@@ -376,18 +677,18 @@ export const firebaseAdapter: DataAdapter = {
     async log(entry) {
       // In production, this should be written by Cloud Functions — but client-side is fine
       // for now since rules prevent tampering with existing entries.
-      const { db } = getFirebase();
-      const ref = await addDoc(collection(db, "activity_logs"), {
-        ...entry,
-        at: serverTimestamp(),
-      });
-      return { id: ref.id, ...entry, at: new Date().toISOString() };
+      return { id: "server-managed", ...entry, at: new Date().toISOString() };
     },
   },
   users: {
     async list() {
       const { db } = getFirebase();
-      const snap = await getDocs(query(collection(db, "users"), orderBy("displayName", "asc")));
+      const snap = await getDocs(query(
+        collection(db, "users"),
+        orderBy("displayName", "asc"),
+        queryLimit(MAX_QUERY_DOCUMENTS + 1),
+      ));
+      assertQueryBound(snap.size, "Users");
       return snap.docs.map((d) => ({ uid: d.id, ...(d.data() as object) })) as User[];
     },
     async get(uid) {
@@ -396,6 +697,17 @@ export const firebaseAdapter: DataAdapter = {
       return s.exists() ? ({ uid: s.id, ...(s.data() as object) } as User) : null;
     },
     async invite(input) {
+      const { app, db, auth } = getFirebase();
+      const invite = httpsCallable<
+        { email: string; displayName: string; role: User["role"] },
+        { uid: string }
+      >(getFunctions(app), "inviteUser");
+      const result = await invite(input);
+      await sendPasswordResetEmail(auth, input.email);
+      const snap = await getDoc(doc(db, "users", result.data.uid));
+      if (!snap.exists()) throw new Error("User profile was not created");
+      return { uid: snap.id, ...(snap.data() as object) } as User;
+      if (false) {
       // ⚠️ For production, this should call a Cloud Function with admin SDK
       // (createUser + setCustomClaims + send reset email). The client-side
       // version below creates only the Firestore profile — the admin must
@@ -423,6 +735,7 @@ export const firebaseAdapter: DataAdapter = {
         active: true,
         createdAt: new Date().toISOString(),
       };
+      }
     },
     async update(uid, patch) {
       const { db } = getFirebase();
@@ -434,7 +747,12 @@ export const firebaseAdapter: DataAdapter = {
   stockMovements: {
     async list() {
       const { db } = getFirebase();
-      const snap = await getDocs(query(collection(db, "stock_movements"), orderBy("at", "desc")));
+      const snap = await getDocs(query(
+        collection(db, "stock_movements"),
+        orderBy("at", "desc"),
+        queryLimit(MAX_QUERY_DOCUMENTS + 1),
+      ));
+      assertQueryBound(snap.size, "Stock movements");
       return snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) })) as StockMovement[];
     },
     async byProduct(productId) {
@@ -444,46 +762,27 @@ export const firebaseAdapter: DataAdapter = {
       );
       return snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) })) as StockMovement[];
     },
-    async adjust(productId, qty, reason, recordedBy) {
-      // In production this should be a Cloud Function (atomic + audit-protected).
-      const { db } = getFirebase();
-      const pRef = doc(db, "products", productId);
-      const result = await runTransaction(db, async (tx) => {
-        const snap = await tx.get(pRef);
-        if (!snap.exists()) throw new Error("Product not found");
-        const product = snap.data() as Product;
-        const newStock = Math.round((product.stock + qty) * 100) / 100;
-        if (newStock < -0.001) throw new Error("Insufficient stock");
-        tx.update(pRef, { stock: newStock, updatedAt: serverTimestamp() });
-        const movRef = doc(collection(db, "stock_movements"));
-        tx.set(movRef, {
-          productId,
-          productName: product.name,
-          unit: product.unit,
-          qty,
-          kind: qty >= 0 ? "adjustment_in" : "adjustment_out",
-          sourceType: "adjustment",
-          reason,
-          balanceAfter: newStock,
-          recordedBy,
-          at: serverTimestamp(),
-        });
-        return { product: { ...product, stock: newStock } as Product, movementId: movRef.id };
-      });
-      const movement: StockMovement = {
-        id: result.movementId,
-        productId,
-        productName: result.product.name,
-        unit: result.product.unit,
-        qty,
-        kind: qty >= 0 ? "adjustment_in" : "adjustment_out",
-        sourceType: "adjustment",
-        reason,
-        balanceAfter: result.product.stock,
-        recordedBy,
-        at: new Date().toISOString(),
+    async adjust(productId, qty, reason, _recordedBy) {
+      const { app, db } = getFirebase();
+      const adjust = httpsCallable<
+        { productId: string; quantity: number; reason: string },
+        { productId: string; movementId: string }
+      >(getFunctions(app), "adjustStock");
+      const result = await adjust({ productId, quantity: qty, reason });
+      const [productSnap, movementSnap] = await Promise.all([
+        getDoc(doc(db, "products", result.data.productId)),
+        getDoc(doc(db, "stock_movements", result.data.movementId)),
+      ]);
+      if (!productSnap.exists() || !movementSnap.exists()) {
+        throw new Error("Stock adjustment was not committed");
+      }
+      return {
+        product: { id: productSnap.id, ...(productSnap.data() as object) } as Product,
+        movement: {
+          id: movementSnap.id,
+          ...(movementSnap.data() as object),
+        } as StockMovement,
       };
-      return { product: result.product, movement };
     },
   },
 };

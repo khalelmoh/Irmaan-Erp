@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -31,7 +31,7 @@ export default function ProductsPage() {
   const [adjusting, setAdjusting] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     try {
       const [products, dos] = await Promise.all([
         withRetry(() => dataAdapter.products.list()),
@@ -44,8 +44,8 @@ export default function ProductsPage() {
     } finally {
       setLoading(false);
     }
-  }
-  useEffect(() => { refresh(); /* eslint-disable-next-line */ }, []);
+  }, [toast]);
+  useEffect(() => { refresh(); }, [refresh]);
 
   /** Map of productId → quantity reserved on open DOs (issued but not delivered yet). */
   const reservedMap = useMemo(() => {
@@ -168,9 +168,11 @@ export default function ProductsPage() {
                   <TD><Badge variant={p.active ? "success" : "muted"}>{p.active ? "Active" : "Inactive"}</Badge></TD>
                   <TD>
                     <div className="flex items-center gap-1">
-                      <Button variant="ghost" size="icon" title="Adjust stock" onClick={() => setAdjusting(p)}>
-                        <SlidersHorizontal className="h-4 w-4 text-slate-500" />
-                      </Button>
+                      {(user?.role === "admin" || user?.role === "manager") && (
+                        <Button variant="ghost" size="icon" title="Adjust stock" onClick={() => setAdjusting(p)}>
+                          <SlidersHorizontal className="h-4 w-4 text-slate-500" />
+                        </Button>
+                      )}
                       <Button asChild variant="ghost" size="icon" title="Stock history">
                         <Link href={`/inventory/movements?product=${p.id}`}>
                           <History className="h-4 w-4 text-slate-500" />

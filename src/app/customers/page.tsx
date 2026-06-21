@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,7 @@ export default function CustomersPage() {
   const [adding, setAdding] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     try {
       setList(await withRetry(() => dataAdapter.customers.list()));
     } catch (err) {
@@ -35,8 +35,8 @@ export default function CustomersPage() {
     } finally {
       setLoading(false);
     }
-  }
-  useEffect(() => { refresh(); /* eslint-disable-next-line */ }, []);
+  }, [toast]);
+  useEffect(() => { refresh(); }, [refresh]);
 
   const {
     page, q, setQ, pageIndex, pageCount, pageSize, setPageSize,

@@ -1,5 +1,6 @@
 "use client";
 
+/* eslint-disable jsx-a11y/alt-text -- React PDF Image is not a DOM img element. */
 import {
   Document, Page, Text, View, StyleSheet, Image,
   Svg, Path, Rect, Defs, LinearGradient, Stop,

@@ -9,7 +9,7 @@ import { KpiTile } from "@/components/reports/KpiTile";
 import { BarSeriesChart } from "@/components/reports/charts";
 import {
   TrendingUp, Wallet, ShoppingBag, CreditCard, Boxes, Coins, ArrowRight,
-  Package, Truck, DollarSign, ShoppingCart, UserPlus, CalendarDays,
+  Package, Truck, DollarSign, ShoppingCart, UserPlus, CalendarDays, Scale,
   ChevronLeft, ChevronRight, Activity, Users, MapPin, Pickaxe, Printer
 } from "lucide-react";
 import { currency } from "@/lib/utils";
@@ -83,6 +83,13 @@ const REPORTS = [
     description: "Delivery times, destination breakdown, and fulfillment.",
     icon: MapPin,
     tone: "text-teal-700 bg-teal-50",
+  },
+  {
+    href: "/reports/reconciliation",
+    title: "Ledger Reconciliation",
+    description: "Detect A/R, A/P, stock, and FIFO allocation inconsistencies.",
+    icon: Scale,
+    tone: "text-rose-700 bg-rose-50",
   },
 ];
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/card";
@@ -50,7 +50,7 @@ export default function UsersPage() {
     if (me && me.role !== "admin") router.replace("/dashboard");
   }, [me, router]);
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     try {
       setList(await withRetry(() => dataAdapter.users.list()));
     } catch (err) {
@@ -58,8 +58,8 @@ export default function UsersPage() {
     } finally {
       setLoading(false);
     }
-  }
-  useEffect(() => { refresh(); /* eslint-disable-next-line */ }, []);
+  }, [toast]);
+  useEffect(() => { refresh(); }, [refresh]);
 
   const {
     page, q, setQ, pageIndex, pageCount, pageSize, setPageSize,
@@ -325,7 +325,7 @@ function EditDialog({ user, open, onClose, onSaved }: { user: User; open: boolea
           </div>
           {!active && (
             <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2 mt-2">
-              Deactivated users can't sign in. Their existing data and audit trail are preserved.
+              Deactivated users can&apos;t sign in. Their existing data and audit trail are preserved.
             </div>
           )}
         </div>

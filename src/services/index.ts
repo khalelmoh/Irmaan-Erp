@@ -1,12 +1,26 @@
 /**
  * Active data adapter.
  *
- * To switch to Firebase:
- *   1. Fill .env.local with NEXT_PUBLIC_FIREBASE_* keys
- *   2. import { firebaseAdapter } from "./firebaseAdapter";
- *   3. export const dataAdapter = firebaseAdapter;
+ * Local demo/dev defaults to MockAdapter.
+ * Production should set NEXT_PUBLIC_USE_FIREBASE=true.
  */
-import { mockAdapter } from "./mockAdapter";
-// import { firebaseAdapter } from "./firebaseAdapter";
+import { activeAdapterName, dataAdapter } from "@/services/selectedAdapter";
 
-export const dataAdapter = mockAdapter;
+const globalForAdapter = globalThis as typeof globalThis & {
+  __irmaanAdapterWarningShown?: boolean;
+};
+
+if (
+  typeof window !== "undefined" &&
+  process.env.NODE_ENV === "production" &&
+  activeAdapterName === "mock" &&
+  !globalForAdapter.__irmaanAdapterWarningShown
+) {
+  globalForAdapter.__irmaanAdapterWarningShown = true;
+  console.warn(
+    "[irmaan-erp] Running with MockAdapter in a production build. " +
+      "Set NEXT_PUBLIC_USE_FIREBASE=true before deploying real company data.",
+  );
+}
+
+export { activeAdapterName, dataAdapter };

@@ -61,7 +61,7 @@ function NewInvoiceInner() {
       setSourceDOs(ds.filter(Boolean) as DeliveryOrder[]);
       setLoaded(true);
     });
-  }, [fromDOParam, soId]);
+  }, [creditNoteForId, fromDOParam, soId]);
 
   if (!loaded) return <div className="text-sm text-slate-500">Loading source document…</div>;
 
@@ -127,6 +127,13 @@ function NewInvoiceInner() {
         lockedCustomerId={sourceDOs[0]?.customerId || sourceSO?.customerId || sourceInvoice?.customerId}
         fromDOIds={sourceDOs.map((d) => d.id)}
         onSubmit={async (data, asDraft) => {
+          if (sourceDOs.length > 0 && !sameCustomer) {
+            throw new Error("Cannot invoice delivery orders for different customers together");
+          }
+          const alreadyInvoiced = sourceDOs.find((d) => d.invoiceId);
+          if (alreadyInvoiced) {
+            throw new Error(`${alreadyInvoiced.doNumber} is already linked to an invoice`);
+          }
           const customer = await dataAdapter.customers.get(data.customerId);
           if (!customer) throw new Error("Customer not found");
           const items = withLineTotals(data.items);
@@ -150,19 +157,12 @@ function NewInvoiceInner() {
             originalInvoiceId: data.originalInvoiceId,
           } as never);
           
-          if (data.salesOrderId) {
-            await dataAdapter.salesOrders.updateInvoicedQty(data.salesOrderId, data.items.map(it => ({
-              productId: it.productId,
-              quantity: it.quantity,
-            })));
-          }
-
           await logActivity(user, {
             action: created.type === "credit_note" ? "credit_note.create" : "invoice.create",
             entityType: created.type === "credit_note" ? "credit_note" : "invoice",
             entityId: created.id,
             entityLabel: created.invoiceNumber,
-            summary: `Created ${asDraft ? "draft " : ""}${created.type === "credit_note" ? "credit note" : "invoice"} ${created.invoiceNumber} for ${customer.name} (${currency(totals.total)})`,
+            summary: `Created ${created.status === "draft" ? "draft " : ""}${created.type === "credit_note" ? "credit note" : "invoice"} ${created.invoiceNumber} for ${customer.name} (${currency(totals.total)})`,
             metadata: { customerId: data.customerId, total: totals.total, doIds: data.doIds, type: created.type },
           });
           router.push(`/invoices/${created.id}`);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -33,8 +33,9 @@ export default function InvoiceViewPage() {
   const [qrDataUrl, setQrDataUrl] = useState<string | undefined>();
   const [verifyUrl, setVerifyUrl] = useState("");
   const [payOpen, setPayOpen] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     if (!params.id) return;
     const d = await dataAdapter.invoices.get(params.id);
     setDoc(d);
@@ -47,15 +48,21 @@ export default function InvoiceViewPage() {
       const data = await QRCode.toDataURL(url, { margin: 1, width: 200, color: { dark: "#0b1e3f", light: "#ffffff" } });
       setQrDataUrl(data);
     }
-  }
+  }, [params.id]);
 
-  useEffect(() => { refresh(); }, [params.id]);
+  useEffect(() => { refresh(); }, [refresh]);
 
   if (!doc) return <div className="text-sm text-slate-500">Loading invoice…</div>;
 
   const out = outstanding(doc);
   const status = effectiveStatus(doc);
-  const canPay = status !== "paid" && status !== "cancelled";
+  const canPay =
+    doc.type === "invoice" &&
+    status !== "draft" &&
+    status !== "paid" &&
+    status !== "cancelled";
+  const canActivate =
+    doc.type === "invoice" || user?.role === "admin" || user?.role === "manager";
 
   async function markCancelled() {
     if (!doc) return;
@@ -74,19 +81,29 @@ export default function InvoiceViewPage() {
 
   async function markSent() {
     if (!doc) return;
-    await dataAdapter.invoices.update(doc.id, { status: "sent" });
-    await logActivity(user, {
-      action: "invoice.send",
-      entityType: "invoice",
-      entityId: doc.id,
-      entityLabel: doc.invoiceNumber,
-      summary: `Marked ${doc.invoiceNumber} as sent`,
-    });
-    refresh();
+    setErr(null);
+    try {
+      await dataAdapter.invoices.update(doc.id, { status: "sent" });
+      await logActivity(user, {
+        action: "invoice.send",
+        entityType: "invoice",
+        entityId: doc.id,
+        entityLabel: doc.invoiceNumber,
+        summary: `Marked ${doc.invoiceNumber} as sent`,
+      });
+      refresh();
+    } catch (error: unknown) {
+      setErr(error instanceof Error ? error.message : "Failed to activate document");
+    }
   }
 
   return (
     <div>
+      {err && (
+        <div className="no-print mb-4 p-3 rounded-md bg-red-50 border border-red-200 text-sm text-red-700">
+          {err}
+        </div>
+      )}
       <div className="no-print flex flex-wrap items-center justify-between gap-3 mb-5">
         <div className="flex items-center gap-3">
           <Button asChild variant="outline" size="sm">
@@ -97,6 +114,9 @@ export default function InvoiceViewPage() {
             <div className="text-xl font-semibold tracking-tight">{doc.invoiceNumber}</div>
           </div>
           <Badge variant={STATUS_VARIANT[status]}>{status}</Badge>
+          {doc.type === "credit_note" && doc.status === "draft" && (
+            <Badge variant="warning">Manager approval pending</Badge>
+          )}
           {out > 0 && status !== "draft" && (
             <span className="text-xs text-slate-500">Outstanding: <span className="font-medium text-amber-700">{currency(out)}</span></span>
           )}
@@ -114,9 +134,12 @@ export default function InvoiceViewPage() {
               <Button asChild variant="outline">
                 <Link href={`/invoices/${doc.id}/edit`}>Edit</Link>
               </Button>
-              <Button onClick={markSent} className="bg-blue-600 hover:bg-blue-700">
-                <Send className="h-4 w-4" /> Mark as sent
-              </Button>
+              {canActivate && (
+                <Button onClick={markSent} className="bg-blue-600 hover:bg-blue-700">
+                  <Send className="h-4 w-4" />
+                  {doc.type === "credit_note" ? "Approve credit note" : "Mark as sent"}
+                </Button>
+              )}
             </>
           )}
           {canPay && (

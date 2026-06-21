@@ -78,13 +78,6 @@ export default function NewDOPage() {
             salesOrderId: data.salesOrderId,
           } as never);
           
-          if (data.salesOrderId) {
-            await dataAdapter.salesOrders.updateDeliveredQty(data.salesOrderId, data.items.map(it => ({
-              productId: it.productId,
-              quantity: it.quantity,
-            })));
-          }
-
           const value = data.items.reduce(
             (s, it) => s + (Number(it.unitPrice) || 0) * Number(it.quantity), 0,
           );
