@@ -18,11 +18,23 @@
  */
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
-import { initializeApp } from "firebase-admin/app";
+import { applicationDefault, cert, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth as getAdminAuth } from "firebase-admin/auth";
 import { getFirestore, FieldValue, Transaction } from "firebase-admin/firestore";
 
-initializeApp();
+if (getApps().length === 0) {
+  const projectId = process.env.FIREBASE_PROJECT_ID;
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+
+  initializeApp({
+    credential:
+      projectId && clientEmail && privateKey
+        ? cert({ projectId, clientEmail, privateKey })
+        : applicationDefault(),
+    projectId,
+  });
+}
 const db = getFirestore();
 
 function pad(n: number, w = 5) { return String(n).padStart(w, "0"); }
@@ -2300,6 +2312,37 @@ export const inviteUser = onCall<{
     }
     throw new HttpsError("internal", "Unable to create user");
   }
+});
+
+export const writeActivityLog = onCall<{
+  entry: Record<string, any>;
+}>(async (req) => {
+  if (!req.auth) throw new HttpsError("unauthenticated", "Sign in required");
+  const user = await requireRole(req.auth.uid, ["admin", "manager", "sales", "warehouse"]);
+  const entry = req.data.entry ?? {};
+  if (
+    typeof entry.action !== "string" ||
+    !entry.action ||
+    typeof entry.entityType !== "string" ||
+    !entry.entityType ||
+    typeof entry.entityId !== "string" ||
+    !entry.entityId ||
+    typeof entry.entityLabel !== "string" ||
+    !entry.entityLabel ||
+    typeof entry.summary !== "string" ||
+    !entry.summary
+  ) {
+    throw new HttpsError("invalid-argument", "Invalid activity log entry");
+  }
+
+  const ref = db.collection("activity_logs").doc();
+  await ref.set({
+    ...entry,
+    actorUid: req.auth.uid,
+    actorName: user.displayName ?? user.email ?? "Unknown",
+    at: FieldValue.serverTimestamp(),
+  });
+  return { id: ref.id };
 });
 
 export const assignDONumber = onDocumentCreated(

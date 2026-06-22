@@ -27,8 +27,8 @@ import {
   onAuthStateChanged,
   sendPasswordResetEmail,
 } from "firebase/auth";
-import { getFunctions, httpsCallable } from "firebase/functions";
 import { getFirebase } from "@/lib/firebase";
+import { callServerOperation } from "@/lib/server-operation";
 import type {
   CompanySettings,
   DataAdapter,
@@ -168,13 +168,10 @@ export const firebaseAdapter: DataAdapter = {
   },
   verification: {
     async get(id) {
-      const { app } = getFirebase();
-      const verify = httpsCallable<
+      return callServerOperation<
         { id: string },
         VerificationResult | null
-      >(getFunctions(app), "verifyDocument");
-      const result = await verify({ id });
-      return result.data;
+      >("verifyDocument", { id }, { public: true });
     },
   },
   settings: {
@@ -196,13 +193,12 @@ export const firebaseAdapter: DataAdapter = {
   customers: {
     ...crud<Customer>("customers"),
     async create(input) {
-      const { app, db } = getFirebase();
-      const create = httpsCallable<
+      const { db } = getFirebase();
+      const result = await callServerOperation<
         { document: Record<string, unknown> },
         { id: string }
-      >(getFunctions(app), "createCustomer");
-      const result = await create({ document: input as Record<string, unknown> });
-      const snap = await getDoc(doc(db, "customers", result.data.id));
+      >("createCustomer", { document: input as Record<string, unknown> });
+      const snap = await getDoc(doc(db, "customers", result.id));
       if (!snap.exists()) throw new Error("Customer was not created");
       return { id: snap.id, ...(snap.data() as object) } as Customer;
     },
@@ -210,13 +206,12 @@ export const firebaseAdapter: DataAdapter = {
   suppliers: {
     ...crud<Supplier>("suppliers"),
     async create(input) {
-      const { app, db } = getFirebase();
-      const create = httpsCallable<
+      const { db } = getFirebase();
+      const result = await callServerOperation<
         { document: Record<string, unknown> },
         { id: string }
-      >(getFunctions(app), "createSupplier");
-      const result = await create({ document: input as Record<string, unknown> });
-      const snap = await getDoc(doc(db, "suppliers", result.data.id));
+      >("createSupplier", { document: input as Record<string, unknown> });
+      const snap = await getDoc(doc(db, "suppliers", result.id));
       if (!snap.exists()) throw new Error("Supplier was not created");
       return { id: snap.id, ...(snap.data() as object) } as Supplier;
     },
@@ -224,13 +219,12 @@ export const firebaseAdapter: DataAdapter = {
   products: {
     ...crud<Product>("products"),
     async create(input) {
-      const { app, db } = getFirebase();
-      const create = httpsCallable<
+      const { db } = getFirebase();
+      const result = await callServerOperation<
         { document: Record<string, unknown> },
         { id: string }
-      >(getFunctions(app), "createProduct");
-      const result = await create({ document: input as Record<string, unknown> });
-      const snap = await getDoc(doc(db, "products", result.data.id));
+      >("createProduct", { document: input as Record<string, unknown> });
+      const snap = await getDoc(doc(db, "products", result.id));
       if (!snap.exists()) throw new Error("Product was not created");
       return { id: snap.id, ...(snap.data() as object) } as Product;
     },
@@ -239,13 +233,12 @@ export const firebaseAdapter: DataAdapter = {
     ...crud<SalesOrder>("sales_orders"),
     nextNumber: () => nextSequence("sales_orders", "SO"),
     async create(input) {
-      const { app, db } = getFirebase();
-      const create = httpsCallable<
+      const { db } = getFirebase();
+      const result = await callServerOperation<
         { document: Record<string, unknown> },
         { id: string }
-      >(getFunctions(app), "createSalesOrder");
-      const result = await create({ document: input as Record<string, unknown> });
-      const snap = await getDoc(doc(db, "sales_orders", result.data.id));
+      >("createSalesOrder", { document: input as Record<string, unknown> });
+      const snap = await getDoc(doc(db, "sales_orders", result.id));
       if (!snap.exists()) throw new Error("Sales order was not created");
       return { id: snap.id, ...(snap.data() as object) } as SalesOrder;
     },
@@ -258,12 +251,11 @@ export const firebaseAdapter: DataAdapter = {
       if (status !== "confirmed" && status !== "cancelled") {
         throw new Error("Unsupported sales-order transition");
       }
-      const { app, db } = getFirebase();
-      const transition = httpsCallable<
+      const { db } = getFirebase();
+      await callServerOperation<
         { id: string; status: string },
         { id: string }
-      >(getFunctions(app), "transitionSalesOrder");
-      await transition({ id, status });
+      >("transitionSalesOrder", { id, status });
       const updated = await getDoc(doc(db, "sales_orders", id));
       if (!updated.exists()) throw new Error("Sales order not found");
       return { id: updated.id, ...(updated.data() as object) } as SalesOrder;
@@ -286,18 +278,17 @@ export const firebaseAdapter: DataAdapter = {
     ...crud<DeliveryOrder>("delivery_orders"),
     nextNumber: () => nextSequence("delivery_orders", "DO"),
     async create(input) {
-      const { app, db } = getFirebase();
-      const createDO = httpsCallable<
+      const { db } = getFirebase();
+      const result = await callServerOperation<
         { document: Record<string, unknown> },
         { id: string }
-      >(getFunctions(app), "createDeliveryOrder");
-      const result = await createDO({ document: input as Record<string, unknown> });
-      const snap = await getDoc(doc(db, "delivery_orders", result.data.id));
+      >("createDeliveryOrder", { document: input as Record<string, unknown> });
+      const snap = await getDoc(doc(db, "delivery_orders", result.id));
       if (!snap.exists()) throw new Error("Delivery order was not created");
       return { id: snap.id, ...(snap.data() as object) } as DeliveryOrder;
     },
     async update(id, patch) {
-      const { app, db } = getFirebase();
+      const { db } = getFirebase();
       const ref = doc(db, "delivery_orders", id);
       const snap = await getDoc(ref);
       if (!snap.exists()) throw new Error("Delivery order not found");
@@ -335,11 +326,10 @@ export const firebaseAdapter: DataAdapter = {
         ) {
           throw new Error(`Unsupported delivery-order transition from ${current.status} to ${targetStatus}`);
         }
-        const transition = httpsCallable<
+        await callServerOperation<
           { id: string; status: string },
           { id: string }
-        >(getFunctions(app), "transitionDeliveryOrder");
-        await transition({ id, status: targetStatus });
+        >("transitionDeliveryOrder", { id, status: targetStatus });
       }
 
       const updated = await getDoc(ref);
@@ -350,57 +340,55 @@ export const firebaseAdapter: DataAdapter = {
     ...crud<PurchaseOrder>("purchase_orders"),
     nextNumber: () => nextSequence("purchase_orders", "PO"),
     async requestApproval(poId) {
-      const { app, db } = getFirebase();
-      const requestApproval = httpsCallable<{ id: string }, { id: string }>(
-        getFunctions(app),
+      const { db } = getFirebase();
+      await callServerOperation<{ id: string }, { id: string }>(
         "requestPurchaseOrderApproval",
+        { id: poId },
       );
-      await requestApproval({ id: poId });
       const updated = await getDoc(doc(db, "purchase_orders", poId));
       if (!updated.exists()) throw new Error("Purchase order not found");
       return { id: updated.id, ...(updated.data() as object) } as PurchaseOrder;
     },
     async decideApproval(poId, decision, reason) {
-      const { app, db } = getFirebase();
-      const decideApproval = httpsCallable<
+      const { db } = getFirebase();
+      await callServerOperation<
         { id: string; decision: "approved" | "rejected"; reason?: string },
         { id: string }
-      >(getFunctions(app), "decidePurchaseOrderApproval");
-      await decideApproval({ id: poId, decision, reason });
+      >("decidePurchaseOrderApproval", { id: poId, decision, reason });
       const updated = await getDoc(doc(db, "purchase_orders", poId));
       if (!updated.exists()) throw new Error("Purchase order not found");
       return { id: updated.id, ...(updated.data() as object) } as PurchaseOrder;
     },
     async create(input) {
-      const { app, db } = getFirebase();
-      const create = httpsCallable<
+      const { db } = getFirebase();
+      const result = await callServerOperation<
         { document: Record<string, unknown> },
         { id: string }
-      >(getFunctions(app), "createPurchaseOrder");
-      const result = await create({ document: input as Record<string, unknown> });
-      const created = await getDoc(doc(db, "purchase_orders", result.data.id));
+      >("createPurchaseOrder", { document: input as Record<string, unknown> });
+      const created = await getDoc(doc(db, "purchase_orders", result.id));
       if (!created.exists()) throw new Error("Purchase order was not created");
       return { id: created.id, ...(created.data() as object) } as PurchaseOrder;
     },
     async update(id, patch) {
-      const { app, db } = getFirebase();
+      const { db } = getFirebase();
       const keys = Object.keys(patch).filter((key) => key !== "id");
       const statusOnly = keys.length === 1 && keys[0] === "status";
       if (statusOnly) {
         if (patch.status !== "sent" && patch.status !== "cancelled") {
           throw new Error("Unsupported purchase-order transition");
         }
-        const transition = httpsCallable<
+        await callServerOperation<
           { id: string; status: string },
           { id: string }
-        >(getFunctions(app), "transitionPurchaseOrder");
-        await transition({ id, status: patch.status });
+        >("transitionPurchaseOrder", { id, status: patch.status });
       } else {
-        const update = httpsCallable<
+        await callServerOperation<
           { id: string; document: Record<string, unknown> },
           { id: string }
-        >(getFunctions(app), "updatePurchaseOrder");
-        await update({ id, document: patch as Record<string, unknown> });
+        >("updatePurchaseOrder", {
+          id,
+          document: patch as Record<string, unknown>,
+        });
       }
       const updated = await getDoc(doc(db, "purchase_orders", id));
       if (!updated.exists()) throw new Error("Purchase order not found");
@@ -424,33 +412,32 @@ export const firebaseAdapter: DataAdapter = {
       return firebaseAdapter.purchaseOrders.receiveItems(poId, receipts, receivedBy);
     },
     async receiveItems(poId, receipts, receivedBy) {
-      const { app, db } = getFirebase();
-      const receive = httpsCallable<
+      void receivedBy;
+      const { db } = getFirebase();
+      await callServerOperation<
         {
           purchaseOrderId: string;
           receipts: Array<{ productId: string; quantity: number }>;
         },
         { id: string }
-      >(getFunctions(app), "receivePurchaseOrder");
-      await receive({ purchaseOrderId: poId, receipts });
+      >("receivePurchaseOrder", { purchaseOrderId: poId, receipts });
       const updated = await getDoc(doc(db, "purchase_orders", poId));
       if (!updated.exists()) throw new Error("Purchase order not found after receipt");
       return { id: updated.id, ...(updated.data() as object) } as PurchaseOrder;
     },
     async recordPayment(poId, paymentInput) {
-      const { app, db } = getFirebase();
+      const { db } = getFirebase();
       const poRef = doc(db, "purchase_orders", poId);
-      const postPayment = httpsCallable<
+      const result = await callServerOperation<
         { purchaseOrderId: string; payment: Record<string, unknown> },
         { purchaseOrderId: string; paymentId: string }
-      >(getFunctions(app), "recordSupplierPayment");
-      const result = await postPayment({
+      >("recordSupplierPayment", {
         purchaseOrderId: poId,
         payment: paymentInput as Record<string, unknown>,
       });
       const [poSnap, paymentSnap] = await Promise.all([
         getDoc(poRef),
-        getDoc(doc(db, "supplier_payments", result.data.paymentId)),
+        getDoc(doc(db, "supplier_payments", result.paymentId)),
       ]);
       if (!poSnap.exists() || !paymentSnap.exists()) {
         throw new Error("Supplier payment was not committed");
@@ -469,13 +456,10 @@ export const firebaseAdapter: DataAdapter = {
       return snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) })) as SupplierPayment[];
     },
     async availableStock(productId) {
-      const { app } = getFirebase();
-      const getAvailable = httpsCallable<
+      return callServerOperation<
         { productId: string },
         Array<{ poId: string; poNumber: string; orderDate: string; remaining: number }>
-      >(getFunctions(app), "getAvailablePOStock");
-      const result = await getAvailable({ productId });
-      return result.data;
+      >("getAvailablePOStock", { productId });
     },
   },
   poAllocations: {
@@ -508,18 +492,17 @@ export const firebaseAdapter: DataAdapter = {
     ...crud<Invoice>("invoices"),
     nextNumber: () => nextSequence("invoices", "INV"),
     async create(input) {
-      const { app, db } = getFirebase();
-      const createInvoice = httpsCallable<
+      const { db } = getFirebase();
+      const result = await callServerOperation<
         { document: Record<string, unknown> },
         { id: string }
-      >(getFunctions(app), "createInvoice");
-      const result = await createInvoice({ document: input as Record<string, unknown> });
-      const snap = await getDoc(doc(db, "invoices", result.data.id));
+      >("createInvoice", { document: input as Record<string, unknown> });
+      const snap = await getDoc(doc(db, "invoices", result.id));
       if (!snap.exists()) throw new Error("Invoice was not created");
       return { id: snap.id, ...(snap.data() as object) } as Invoice;
     },
     async update(id, patch) {
-      const { app, db } = getFirebase();
+      const { db } = getFirebase();
       const ref = doc(db, "invoices", id);
       const snap = await getDoc(ref);
       if (!snap.exists()) throw new Error("Invoice not found");
@@ -571,30 +554,28 @@ export const firebaseAdapter: DataAdapter = {
         ) {
           throw new Error(`Unsupported invoice transition from ${current.status} to ${targetStatus}`);
         }
-        const transition = httpsCallable<
+        await callServerOperation<
           { id: string; status: string },
           { id: string }
-        >(getFunctions(app), "transitionInvoice");
-        await transition({ id, status: targetStatus });
+        >("transitionInvoice", { id, status: targetStatus });
       }
 
       const updated = await getDoc(ref);
       return { id: updated.id, ...(updated.data() as object) } as Invoice;
     },
     async recordPayment(invoiceId, paymentInput) {
-      const { app, db } = getFirebase();
+      const { db } = getFirebase();
       const invRef = doc(db, "invoices", invoiceId);
-      const postPayment = httpsCallable<
+      const result = await callServerOperation<
         { invoiceId: string; payment: Record<string, unknown> },
         { invoiceId: string; paymentId: string }
-      >(getFunctions(app), "recordInvoicePayment");
-      const result = await postPayment({
+      >("recordInvoicePayment", {
         invoiceId,
         payment: paymentInput as Record<string, unknown>,
       });
       const [invoiceSnap, paymentSnap] = await Promise.all([
         getDoc(invRef),
-        getDoc(doc(db, "payments", result.data.paymentId)),
+        getDoc(doc(db, "payments", result.paymentId)),
       ]);
       if (!invoiceSnap.exists() || !paymentSnap.exists()) {
         throw new Error("Invoice payment was not committed");
@@ -675,9 +656,13 @@ export const firebaseAdapter: DataAdapter = {
       return snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) })) as ActivityLog[];
     },
     async log(entry) {
-      // In production, this should be written by Cloud Functions — but client-side is fine
-      // for now since rules prevent tampering with existing entries.
-      return { id: "server-managed", ...entry, at: new Date().toISOString() };
+      const result = await callServerOperation<
+        { entry: Record<string, unknown> },
+        { id: string }
+      >("writeActivityLog", {
+        entry: entry as unknown as Record<string, unknown>,
+      });
+      return { id: result.id, ...entry, at: new Date().toISOString() };
     },
   },
   users: {
@@ -697,45 +682,15 @@ export const firebaseAdapter: DataAdapter = {
       return s.exists() ? ({ uid: s.id, ...(s.data() as object) } as User) : null;
     },
     async invite(input) {
-      const { app, db, auth } = getFirebase();
-      const invite = httpsCallable<
+      const { db, auth } = getFirebase();
+      const result = await callServerOperation<
         { email: string; displayName: string; role: User["role"] },
         { uid: string }
-      >(getFunctions(app), "inviteUser");
-      const result = await invite(input);
+      >("inviteUser", input);
       await sendPasswordResetEmail(auth, input.email);
-      const snap = await getDoc(doc(db, "users", result.data.uid));
+      const snap = await getDoc(doc(db, "users", result.uid));
       if (!snap.exists()) throw new Error("User profile was not created");
       return { uid: snap.id, ...(snap.data() as object) } as User;
-      if (false) {
-      // ⚠️ For production, this should call a Cloud Function with admin SDK
-      // (createUser + setCustomClaims + send reset email). The client-side
-      // version below creates only the Firestore profile — the admin must
-      // then go to Firebase Console → Authentication and add the matching
-      // Auth user, OR a CF will pick this up via onCreate trigger.
-      const { db, auth } = getFirebase();
-      // Generate a temporary UID — when the CF / admin later creates the real
-      // Auth account, the trigger should reconcile.
-      const tempUid = `pending-${Date.now()}`;
-      await setDoc(doc(db, "users", tempUid), {
-        email: input.email,
-        displayName: input.displayName,
-        role: input.role,
-        active: true,
-        pendingAuthSetup: true,
-        createdAt: serverTimestamp(),
-      });
-      // Trigger the password-reset email so the user can set their initial password
-      try { await sendPasswordResetEmail(auth, input.email); } catch { /* ignore */ }
-      return {
-        uid: tempUid,
-        email: input.email,
-        displayName: input.displayName,
-        role: input.role,
-        active: true,
-        createdAt: new Date().toISOString(),
-      };
-      }
     },
     async update(uid, patch) {
       const { db } = getFirebase();
@@ -763,15 +718,14 @@ export const firebaseAdapter: DataAdapter = {
       return snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) })) as StockMovement[];
     },
     async adjust(productId, qty, reason, _recordedBy) {
-      const { app, db } = getFirebase();
-      const adjust = httpsCallable<
+      const { db } = getFirebase();
+      const result = await callServerOperation<
         { productId: string; quantity: number; reason: string },
         { productId: string; movementId: string }
-      >(getFunctions(app), "adjustStock");
-      const result = await adjust({ productId, quantity: qty, reason });
+      >("adjustStock", { productId, quantity: qty, reason });
       const [productSnap, movementSnap] = await Promise.all([
-        getDoc(doc(db, "products", result.data.productId)),
-        getDoc(doc(db, "stock_movements", result.data.movementId)),
+        getDoc(doc(db, "products", result.productId)),
+        getDoc(doc(db, "stock_movements", result.movementId)),
       ]);
       if (!productSnap.exists() || !movementSnap.exists()) {
         throw new Error("Stock adjustment was not committed");

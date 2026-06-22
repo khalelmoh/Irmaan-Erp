@@ -117,7 +117,7 @@ export const dataAdapter = firebaseAdapter;
 
 ---
 
-## Part 3 — Deploy security rules + Cloud Functions (10 min)
+## Part 3 — Deploy Firestore security rules (10 min)
 
 ### 3.1 Install the Firebase CLI
 ```bash
@@ -143,20 +143,12 @@ This pushes the `firestore.rules` file we wrote — which:
 - Prevents clients from spoofing `doNumber`, `invoiceNumber`, etc.
 - Makes the `counters/` and `activity_logs/` collections server-write-only
 
-### 3.4 Deploy Cloud Functions *(optional but recommended)*
-```bash
-cd functions
-npm install
-cd ..
-firebase deploy --only functions
-```
+### 3.4 Server-side operations
 
-This deploys:
-- `assignDONumber` — stamps `DO-00001`, `DO-00002`… atomically when a DO is created
-- `assignPONumber`, `assignInvoiceNumber` — same for POs and invoices
-- `auditDO` — writes to `activity_logs` whenever a DO changes
-
-> 💡 **Cloud Functions require a Blaze (pay-as-you-go) plan.** You won't be billed unless you exceed the generous free tier (2M invocations/month). If you want to skip this for now, the app still works — the client-side adapter generates document numbers using a Firestore transaction, which is good enough for low-traffic businesses.
+Authoritative operations run through the Next.js API route hosted by Vercel.
+Firebase Cloud Functions are not required, so the Firebase project can remain
+on the Spark plan. The API verifies the signed-in user's Firebase ID token
+before running the existing Firestore transactions.
 
 ### 3.5 Create your first admin user
 
@@ -225,8 +217,16 @@ git push -u origin main
 2. Sign in with GitHub
 3. Import your `irmaan-erp` repo
 4. **Framework Preset:** Next.js (auto-detected)
-5. Expand **Environment Variables** — paste each `NEXT_PUBLIC_FIREBASE_*` variable from your `.env.local`
+5. Expand **Environment Variables** and add:
+   - Every `NEXT_PUBLIC_FIREBASE_*` value from `.env.local`
+   - `NEXT_PUBLIC_USE_FIREBASE=true`
+   - `FIREBASE_PROJECT_ID`
+   - `FIREBASE_CLIENT_EMAIL`
+   - `FIREBASE_PRIVATE_KEY` (paste the complete private key, including its line breaks)
 6. Click **Deploy** → wait ~2 minutes
+
+The three `FIREBASE_*` Admin values are server-only secrets. Never prefix them
+with `NEXT_PUBLIC_` and never commit them to Git.
 
 You'll get a live URL like `https://irmaan-erp.vercel.app`. That's your production app.
 
@@ -282,7 +282,7 @@ Bigger usage (50K+ docs/month) starts costing $5-30/month. You'll see usage on t
 | "auth/unauthorized-domain" on the live site | Add your domain in Firebase → Auth → Settings → Authorized domains |
 | Login works, but pages show "Loading…" forever | The `users/{uid}` Firestore doc is missing for this user — create it with their UID |
 | "Missing or insufficient permissions" | Either the user's `users/{uid}` doc is missing the `role` field, or the rule doesn't allow that role — check `firestore.rules` |
-| DO numbers come out as empty strings | Cloud Functions aren't deployed. Either deploy them, or temporarily switch back to mock adapter for sequence generation |
+| A create/payment/stock action says the server could not complete it | Confirm all three server-only `FIREBASE_*` variables are configured in Vercel, then redeploy |
 | QR scanned on phone shows "Document not found" | `NEXT_PUBLIC_APP_URL` is wrong in production — make sure it matches your Vercel URL exactly |
 | Slow loads on first visit | Firebase cold start. Normal. Subsequent loads are fast. |
 | You break something — how to roll back? | Vercel keeps every deploy; click any previous deploy → "Promote to production" |

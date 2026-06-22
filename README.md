@@ -36,8 +36,8 @@ A professional ERP-lite for trading / logistics companies. Manages **Delivery Or
                                 ▼
 ┌──────────────────────────────────────────────────────────────────────┐
 │                            BACKEND                                   │
-│  Firebase Auth · Firestore · Storage · Cloud Functions               │
-│  (DO number generator, audit logs, email/PDF jobs)                   │
+│  Firebase Auth · Firestore · Storage · Vercel API routes             │
+│  (transactions, document numbers, audit logs, user administration)  │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -46,7 +46,7 @@ A professional ERP-lite for trading / logistics companies. Manages **Delivery Or
 * **Service/Adapter layer** means the UI never imports Firebase directly. Swap `MockAdapter` → `FirebaseAdapter` by changing one line in `src/services/index.ts`. Unit tests stay fast, the preview works without credentials, and migration is painless.
 * **App Router** lets us co-locate route, loading, and error states per module.
 * **Server components for lists**, client components for forms and interactive document builders.
-* **Cloud Functions** own anything that must be authoritative: sequential document numbers (`DO-00001`), activity logs, scheduled reports. Never trust the client for these.
+* **Vercel API routes** own anything that must be authoritative: sequential document numbers (`DO-00001`), stock transactions, payments, and activity logs. Firebase ID tokens and role profiles are verified on the server.
 
 ---
 
@@ -97,8 +97,8 @@ irmaan-erp/
 │   └── contexts/                   # AuthContext
 ├── firestore.rules                 # Security rules
 ├── firestore.indexes.json
-├── functions/                      # Cloud Functions (TS)
-│   └── src/index.ts                # nextDocNumber, onDOCreate, ...
+├── functions/                      # Shared authoritative operation handlers
+│   └── src/index.ts                # transactions reused by the Vercel API
 ├── tailwind.config.ts
 ├── next.config.mjs
 ├── tsconfig.json
@@ -162,7 +162,7 @@ All documents include `createdAt`, `updatedAt`, `createdBy`, `updatedBy`.
 ### `delivery_orders/{doId}`
 ```ts
 {
-  doNumber: string;           // DO-00001 (assigned by Cloud Function)
+  doNumber: string;           // DO-00001 (assigned by the server transaction)
   customerId: string;
   customerSnapshot: {         // denormalized for historic accuracy
     name: string;
@@ -228,7 +228,7 @@ All documents include `createdAt`, `updatedAt`, `createdBy`, `updatedBy`.
 }
 ```
 
-### `activity_logs/{logId}` (append-only, written by Cloud Functions)
+### `activity_logs/{logId}` (append-only, written by the server API)
 ```ts
 {
   actor: string;              // uid
@@ -290,7 +290,7 @@ Enforced in **three** places: UI (hide controls), middleware (`/api/*`), Firesto
 Sequence generation runs inside a Firestore **transaction** on the `counters/{name}` doc:
 
 ```ts
-// Cloud Function — callable
+// Shared server operation handler
 export const nextDocNumber = onCall(async ({ data, auth }) => {
   assertAuthed(auth);
   const { sequence, prefix } = data; // "delivery_orders", "DO"
@@ -319,7 +319,9 @@ npm run dev      # http://localhost:3000 — runs against MockAdapter by default
 To connect Firebase:
 1. Copy `.env.example` → `.env.local` and paste your project keys.
 2. Edit `src/services/index.ts` and switch `dataAdapter` to `firebaseAdapter`.
-3. Deploy rules: `firebase deploy --only firestore:rules,functions`.
+3. Deploy rules: `firebase deploy --only firestore:rules`.
+4. Configure the public Firebase variables plus `FIREBASE_PROJECT_ID`,
+   `FIREBASE_CLIENT_EMAIL`, and `FIREBASE_PRIVATE_KEY` in Vercel.
 
 ---
 
@@ -348,7 +350,7 @@ To connect Firebase:
   - Invoice cancellation
 - ✅ Public verification page handles both DOs **and** invoices
 - ✅ Firestore security rules (incl. payment validation)
-- ✅ Cloud Function for `nextDocNumber`
+- ✅ Transaction-safe server numbering
 
 - ✅ **Suppliers module** (NEW): full CRUD with auto-maintained A/P balance
 - ✅ **Purchase Orders module** (NEW):
