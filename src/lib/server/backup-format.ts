@@ -24,6 +24,8 @@ export interface BackupPayload {
   formatVersion: 2;
   exportedAt: string;
   projectId?: string;
+  documentCount?: number;
+  collectionCount?: number;
   data: Record<string, BackupDocument[]>;
 }
 

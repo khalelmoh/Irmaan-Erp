@@ -287,6 +287,7 @@ export interface StockMovement {
 export type ActivityAction =
   // Auth
   | "auth.login" | "auth.logout" | "auth.password_reset_requested"
+  | "settings.update"
   // Customers / Suppliers / Products
   | "customer.create" | "customer.update"
   | "supplier.create" | "supplier.update"
@@ -306,7 +307,7 @@ export type ActivityAction =
 export type EntityType =
   | "user" | "customer" | "supplier" | "product"
   | "sales_order" | "delivery_order" | "purchase_order" | "invoice" | "credit_note"
-  | "payment" | "supplier_payment" | "stock_movement";
+  | "payment" | "supplier_payment" | "stock_movement" | "settings";
 
 export interface ActivityLog {
   id: string;

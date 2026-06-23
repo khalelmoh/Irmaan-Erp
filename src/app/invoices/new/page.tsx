@@ -32,9 +32,15 @@ function NewInvoiceInner() {
   const [sourceSO, setSourceSO] = useState<SalesOrder | null>(null);
   const [sourceInvoice, setSourceInvoice] = useState<Invoice | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [defaultTaxRate, setDefaultTaxRate] = useState(0.05);
+  const [defaultPaymentTerms, setDefaultPaymentTerms] = useState(30);
 
   useEffect(() => {
     dataAdapter.invoices.nextNumber().then(setPreview);
+    dataAdapter.settings.get().then((settings) => {
+      setDefaultTaxRate(settings.defaultTaxRate);
+      setDefaultPaymentTerms(settings.defaultPaymentTerms);
+    });
   }, []);
 
   useEffect(() => {
@@ -67,9 +73,15 @@ function NewInvoiceInner() {
 
   // Pre-fill the form if we're invoicing from one or more DOs, or a Sales Order
   let seed: any = undefined;
+  const defaultDueDate = new Date(Date.now() + defaultPaymentTerms * 86400000)
+    .toISOString()
+    .slice(0, 10);
+
   if (sourceDOs.length > 0) {
     seed = {
       customerId: sourceDOs[0].customerId,
+      dueDate: defaultDueDate,
+      taxRate: defaultTaxRate,
       items: sourceDOs.flatMap((d) =>
         d.items.map((it) => ({
           productId: it.productId,
@@ -91,6 +103,8 @@ function NewInvoiceInner() {
     seed = {
       customerId: sourceSO.customerId,
       salesOrderId: sourceSO.id,
+      dueDate: defaultDueDate,
+      taxRate: defaultTaxRate,
       items: itemsToInvoice.map((it: any) => ({
         productId: it.productId,
         name: it.name,
@@ -104,6 +118,8 @@ function NewInvoiceInner() {
       type: "credit_note",
       originalInvoiceId: sourceInvoice.id,
       customerId: sourceInvoice.customerId,
+      dueDate: defaultDueDate,
+      taxRate: defaultTaxRate,
       items: sourceInvoice.items.map((it) => ({ ...it })),
     };
   }
@@ -123,7 +139,7 @@ function NewInvoiceInner() {
       )}
       <InvoiceForm
         nextNumberPreview={preview}
-        defaults={seed as never}
+        defaults={{ dueDate: defaultDueDate, taxRate: defaultTaxRate, ...(seed ?? {}) } as never}
         lockedCustomerId={sourceDOs[0]?.customerId || sourceSO?.customerId || sourceInvoice?.customerId}
         fromDOIds={sourceDOs.map((d) => d.id)}
         onSubmit={async (data, asDraft) => {

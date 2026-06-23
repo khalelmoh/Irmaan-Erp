@@ -3,6 +3,8 @@ import type { Role } from "@/types";
 const ALL: Role[] = ["admin", "manager", "sales", "warehouse"];
 
 export const ROUTE_ROLES: Array<{ prefix: string; roles: Role[] }> = [
+  { prefix: "/settings", roles: ["admin"] },
+  { prefix: "/backups", roles: ["admin"] },
   { prefix: "/users", roles: ["admin"] },
   { prefix: "/audit", roles: ["admin", "manager"] },
   { prefix: "/reports", roles: ["admin", "manager"] },

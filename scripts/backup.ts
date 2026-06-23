@@ -8,7 +8,7 @@ import { cert, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
-import { BACKUP_COLLECTIONS, encodeFirestoreValue } from "./backup-format";
+import { BACKUP_COLLECTIONS, encodeFirestoreValue } from "../src/lib/server/backup-format";
 
 function loadLocalEnvironment() {
   try {

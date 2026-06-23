@@ -14,9 +14,11 @@ export default function NewPOPage() {
   const router = useRouter();
   const { user } = useAuth();
   const [preview, setPreview] = useState("PO-00001");
+  const [defaultTaxRate, setDefaultTaxRate] = useState(0);
 
   useEffect(() => {
     dataAdapter.purchaseOrders.nextNumber().then(setPreview);
+    dataAdapter.settings.get().then((settings) => setDefaultTaxRate(settings.defaultTaxRate));
   }, []);
 
   return (
@@ -24,6 +26,7 @@ export default function NewPOPage() {
       <PageHeader title="New Purchase Order" description="Order goods from a supplier." />
       <PurchaseOrderForm
         nextNumberPreview={preview}
+        defaults={{ taxRate: defaultTaxRate }}
         onSubmit={async (data, asDraft) => {
           const supplier = await dataAdapter.suppliers.get(data.supplierId);
           if (!supplier) throw new Error("Supplier not found");

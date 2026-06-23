@@ -10,7 +10,7 @@
 import { cert, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { existsSync, readFileSync } from "fs";
-import { normalizeBackupPayload } from "./backup-format";
+import { normalizeBackupPayload } from "../src/lib/server/backup-format";
 
 function loadLocalEnvironment() {
   try {

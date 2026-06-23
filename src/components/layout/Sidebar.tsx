@@ -16,6 +16,7 @@ import {
   UserCog,
   Settings,
   ClipboardList,
+  Download,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Logo } from "./Logo";
@@ -35,6 +36,7 @@ const nav: { href: string; label: string; icon: typeof Users; roles?: Role[] }[]
   { href: "/reports", label: "Reports", icon: BarChart3, roles: ["admin", "manager"] },
   { href: "/audit", label: "Audit Log", icon: ShieldCheck, roles: ["admin", "manager"] },
   { href: "/users", label: "Users", icon: UserCog, roles: ["admin"] },
+  { href: "/backups", label: "Backups", icon: Download, roles: ["admin"] },
 ];
 
 export function Sidebar() {
@@ -69,13 +71,20 @@ export function Sidebar() {
         })}
       </nav>
       <div className="p-3 border-t border-slate-100">
-        <Link
-          href="#"
-          className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-slate-500 hover:bg-slate-50"
-        >
-          <Settings className="h-4 w-4" />
-          Settings
-        </Link>
+        {role === "admin" && (
+          <Link
+            href="/settings"
+            className={cn(
+              "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+              pathname?.startsWith("/settings")
+                ? "bg-brand-50 text-brand-800 border border-brand-100"
+                : "text-slate-500 hover:bg-slate-50",
+            )}
+          >
+            <Settings className="h-4 w-4" />
+            Settings
+          </Link>
+        )}
       </div>
     </aside>
   );

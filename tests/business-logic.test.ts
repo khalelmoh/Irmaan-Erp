@@ -10,7 +10,7 @@ import {
   decodeFirestoreValue,
   encodeFirestoreValue,
   normalizeBackupPayload,
-} from "../scripts/backup-format";
+} from "../src/lib/server/backup-format";
 import { Timestamp } from "firebase-admin/firestore";
 import { reconcileERP } from "../src/lib/reconciliation";
 import {
@@ -98,6 +98,8 @@ test("route access follows the ERP role boundaries", () => {
   assert.equal(canAccessPath("manager", "/reports/profit"), true);
   assert.equal(canAccessPath("manager", "/users"), false);
   assert.equal(canAccessPath("admin", "/users"), true);
+  assert.equal(canAccessPath("sales", "/settings"), false);
+  assert.equal(canAccessPath("admin", "/settings"), true);
 });
 
 test("document verification links use one encoded public route", () => {
