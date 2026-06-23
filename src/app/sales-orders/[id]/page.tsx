@@ -17,6 +17,7 @@ import {
 import { currency } from "@/lib/utils";
 import { SO_STATUS_VARIANT, SO_STATUS_LABEL, deliveryProgress, invoiceProgress } from "@/lib/sales-order";
 import { logActivity } from "@/lib/audit";
+import { verificationUrl } from "@/lib/document-verification";
 import type { SalesOrder } from "@/types";
 
 const PDFDownloadButton = dynamic(() => import("./PDFDownloadButton").then((m) => m.PDFDownloadButton), {
@@ -38,10 +39,9 @@ export default function SOViewPage() {
     const d = await dataAdapter.salesOrders.get(params.id);
     setDoc(d);
     if (d) {
-      const base = typeof window !== "undefined" ? window.location.origin : "";
-      const url = `${base}/verify/so/${d.id}`;
+      const url = verificationUrl(d.id, window.location.origin);
       setVerifyUrl(url);
-      const data = await QRCode.toDataURL(url, { margin: 1, width: 200, color: { dark: "#0b1e3f", light: "#ffffff" } });
+      const data = await QRCode.toDataURL(url, { margin: 2, width: 240, errorCorrectionLevel: "H", color: { dark: "#0b1e3f", light: "#ffffff" } });
       setQrDataUrl(data);
     }
   }, [params.id]);

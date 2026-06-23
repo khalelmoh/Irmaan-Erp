@@ -15,6 +15,7 @@ import type { DeliveryOrder, DOStatus, POAllocation } from "@/types";
 import QRCode from "qrcode";
 import { logActivity } from "@/lib/audit";
 import { currency } from "@/lib/utils";
+import { verificationUrl } from "@/lib/document-verification";
 
 const PDFDownloadButton = dynamic(() => import("./PDFDownloadButton").then((m) => m.PDFDownloadButton), {
   ssr: false,
@@ -41,10 +42,9 @@ export default function DOViewPage() {
       if (d) {
         const allocs = await dataAdapter.poAllocations.byDeliveryOrder(d.id);
         setAllocations(allocs);
-        const base = typeof window !== "undefined" ? window.location.origin : "";
-        const url = `${base}/verify/${d.id}`;
+        const url = verificationUrl(d.id, window.location.origin);
         setVerifyUrl(url);
-        const dataUrl = await QRCode.toDataURL(url, { margin: 1, width: 240, color: { dark: "#0b1e3f", light: "#ffffff" } });
+        const dataUrl = await QRCode.toDataURL(url, { margin: 2, width: 240, errorCorrectionLevel: "H", color: { dark: "#0b1e3f", light: "#ffffff" } });
         setQrDataUrl(dataUrl);
       }
     });

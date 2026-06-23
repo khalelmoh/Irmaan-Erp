@@ -13,6 +13,10 @@ import {
 } from "../scripts/backup-format";
 import { Timestamp } from "firebase-admin/firestore";
 import { reconcileERP } from "../src/lib/reconciliation";
+import {
+  verificationPath,
+  verificationUrl,
+} from "../src/lib/document-verification";
 import type {
   Customer,
   POAllocation,
@@ -94,6 +98,14 @@ test("route access follows the ERP role boundaries", () => {
   assert.equal(canAccessPath("manager", "/reports/profit"), true);
   assert.equal(canAccessPath("manager", "/users"), false);
   assert.equal(canAccessPath("admin", "/users"), true);
+});
+
+test("document verification links use one encoded public route", () => {
+  assert.equal(verificationPath("so/123"), "/verify/so%2F123");
+  assert.equal(
+    verificationUrl("invoice 42", "https://irmaan-erp.vercel.app"),
+    "https://irmaan-erp.vercel.app/verify/invoice%2042",
+  );
 });
 
 test("backup format preserves Firestore timestamps and accepts legacy backups", () => {

@@ -19,10 +19,10 @@ export function QRBlock({ value, size = 110, className }: Props) {
 
     let cancelled = false;
     QRCode.toCanvas(canvas, qrValue, {
-      margin: 1,
+      margin: 2,
       width: size,
       color: { dark: "#0b1e3f", light: "#ffffff" },
-      errorCorrectionLevel: "M",
+      errorCorrectionLevel: "H",
     }).catch((error) => {
       if (!cancelled) {
         console.warn("[qr] unable to render QR code:", error);
@@ -36,5 +36,12 @@ export function QRBlock({ value, size = 110, className }: Props) {
 
   if (!qrValue) return null;
 
-  return <canvas ref={canvasRef} className={className} aria-label="Document QR code" />;
+  return (
+    <canvas
+      ref={canvasRef}
+      className={className}
+      role="img"
+      aria-label="Scan to verify this document"
+    />
+  );
 }

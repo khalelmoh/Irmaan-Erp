@@ -1408,6 +1408,8 @@ export const mockAdapter: DataAdapter = {
   verification: {
     async get(id) {
       const s = load();
+      const salesOrder = s.salesOrders.find((item) => item.id === id);
+      if (salesOrder) return { kind: "so", doc: salesOrder };
       const invoice = s.invoices.find((item) => item.id === id);
       if (invoice) return { kind: "invoice", doc: invoice };
       const po = s.purchaseOrders.find((item) => item.id === id);

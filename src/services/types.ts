@@ -38,6 +38,7 @@ export interface CompanySettings {
 }
 
 export type VerificationResult =
+  | { kind: "so"; doc: SalesOrder }
   | { kind: "do"; doc: DeliveryOrder }
   | { kind: "invoice"; doc: Invoice }
   | { kind: "po"; doc: PurchaseOrder };

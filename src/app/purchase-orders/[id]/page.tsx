@@ -22,6 +22,7 @@ import { PO_STATUS_VARIANT, PO_STATUS_LABEL, poOutstanding, receiveProgress } fr
 import { logActivity } from "@/lib/audit";
 import { PAYMENT_METHOD_LABEL } from "@/lib/invoice";
 import type { PurchaseOrder, SupplierPayment, POAllocation } from "@/types";
+import { verificationUrl } from "@/lib/document-verification";
 
 const PDFDownloadButton = dynamic(() => import("./PDFDownloadButton").then((m) => m.PDFDownloadButton), {
   ssr: false,
@@ -49,10 +50,9 @@ export default function POViewPage() {
       setPayments(ps);
       const allocs = await dataAdapter.poAllocations.byPurchaseOrder(d.id);
       setAllocations(allocs);
-      const base = typeof window !== "undefined" ? window.location.origin : "";
-      const url = `${base}/verify/${d.id}`;
+      const url = verificationUrl(d.id, window.location.origin);
       setVerifyUrl(url);
-      const data = await QRCode.toDataURL(url, { margin: 1, width: 200, color: { dark: "#0b1e3f", light: "#ffffff" } });
+      const data = await QRCode.toDataURL(url, { margin: 2, width: 240, errorCorrectionLevel: "H", color: { dark: "#0b1e3f", light: "#ffffff" } });
       setQrDataUrl(data);
     }
   }, [params.id]);

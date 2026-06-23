@@ -1387,11 +1387,32 @@ export const verifyDocument = onCall<{ id: string }>(async (req) => {
   if (typeof id !== "string" || !id || id.length > 200) {
     throw new HttpsError("invalid-argument", "Document ID is required");
   }
-  const [invoiceSnap, poSnap, doSnap] = await Promise.all([
+  const [salesOrderSnap, invoiceSnap, poSnap, doSnap] = await Promise.all([
+    db.doc(`sales_orders/${id}`).get(),
     db.doc(`invoices/${id}`).get(),
     db.doc(`purchase_orders/${id}`).get(),
     db.doc(`delivery_orders/${id}`).get(),
   ]);
+
+  if (salesOrderSnap.exists) {
+    const salesOrder = salesOrderSnap.data()!;
+    return {
+      kind: "so",
+      doc: {
+        id,
+        soNumber: salesOrder.soNumber,
+        customerSnapshot: { name: salesOrder.customerSnapshot?.name ?? "Unknown" },
+        salespersonName: salesOrder.salespersonName ?? "",
+        orderDate: asISOString(salesOrder.orderDate),
+        validUntil: salesOrder.validUntil ? asISOString(salesOrder.validUntil) : undefined,
+        items: (salesOrder.items ?? []).map((item: Record<string, any>) => ({
+          quantity: item.quantity,
+        })),
+        total: salesOrder.total,
+        status: salesOrder.status,
+      },
+    };
+  }
 
   if (invoiceSnap.exists) {
     const invoice = invoiceSnap.data()!;

@@ -19,6 +19,7 @@ import { currency, formatDateTime } from "@/lib/utils";
 import { STATUS_VARIANT, outstanding, effectiveStatus, PAYMENT_METHOD_LABEL } from "@/lib/invoice";
 import { logActivity } from "@/lib/audit";
 import type { Invoice, Payment } from "@/types";
+import { verificationUrl } from "@/lib/document-verification";
 
 const PDFDownloadButton = dynamic(() => import("./PDFDownloadButton").then((m) => m.PDFDownloadButton), {
   ssr: false,
@@ -42,10 +43,9 @@ export default function InvoiceViewPage() {
     if (d) {
       const ps = await dataAdapter.invoices.payments(d.id);
       setPayments(ps);
-      const base = typeof window !== "undefined" ? window.location.origin : "";
-      const url = `${base}/verify/${d.id}`;
+      const url = verificationUrl(d.id, window.location.origin);
       setVerifyUrl(url);
-      const data = await QRCode.toDataURL(url, { margin: 1, width: 200, color: { dark: "#0b1e3f", light: "#ffffff" } });
+      const data = await QRCode.toDataURL(url, { margin: 2, width: 240, errorCorrectionLevel: "H", color: { dark: "#0b1e3f", light: "#ffffff" } });
       setQrDataUrl(data);
     }
   }, [params.id]);
