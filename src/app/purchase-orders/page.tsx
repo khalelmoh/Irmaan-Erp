@@ -11,51 +11,44 @@ import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { Pagination } from "@/components/ui/Pagination";
-import { Plus, Search, Eye, ShoppingCart, DollarSign, Truck, AlertCircle } from "lucide-react";
+import { Plus, Search, Eye, ShoppingCart, CheckCircle, Truck, AlertCircle, type LucideIcon } from "lucide-react";
 import { currency, formatDate } from "@/lib/utils";
 import { PO_STATUS_VARIANT, PO_STATUS_LABEL, poOutstanding, receiveProgress } from "@/lib/purchase-order";
-import { usePaginatedList } from "@/hooks/usePaginatedList";
+import { useCursorPaginatedList } from "@/hooks/useCursorPaginatedList";
 import { useToast } from "@/contexts/ToastContext";
-import { withRetry, errorMessage } from "@/lib/retry";
+import { errorMessage } from "@/lib/retry";
 import type { PurchaseOrder, POStatus } from "@/types";
 
 export default function POListPage() {
   const toast = useToast();
-  const [list, setList] = useState<PurchaseOrder[]>([]);
   const [status, setStatus] = useState<"all" | POStatus | "pending_receipt">("all");
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    withRetry(() => dataAdapter.purchaseOrders.list())
-      .then((d) => { setList(d); setLoading(false); })
-      .catch((err) => { toast.error("Couldn't load purchase orders", errorMessage(err)); setLoading(false); });
-  }, [toast]);
-
-  const filterFn = useCallback(
-    (p: PurchaseOrder) => {
-      if (status === "all") return true;
-      if (status === "pending_receipt") return p.status === "sent" || p.status === "partial_received";
-      return p.status === status;
-    },
+  const loadPage = useCallback(
+    (options: Parameters<typeof dataAdapter.purchaseOrders.listPage>[0]) =>
+      dataAdapter.purchaseOrders.listPage({ ...options, status }),
     [status],
   );
 
   const {
     page, q, setQ, pageIndex, pageCount, pageSize, setPageSize,
-    next, prev, start, end, total,
-  } = usePaginatedList(list, {
-    searchableFields: (p) => [p.poNumber, p.supplierSnapshot.name, p.notes ?? ""],
-    filterFn,
+    next, prev, start, end, total, hasMore, loading, error,
+  } = useCursorPaginatedList<PurchaseOrder>({
+    loadPage,
+    resetKeys: [status],
     pageSize: 25,
   });
 
+  useEffect(() => {
+    if (error) toast.error("Couldn't load purchase orders", errorMessage(error));
+  }, [error, toast]);
+
   const stats = useMemo(() => {
-    const totalOrdered = list.reduce((s, p) => s + (p.status === "cancelled" ? 0 : p.total), 0);
-    const totalAP = list.reduce((s, p) => s + (p.status === "cancelled" || p.status === "draft" ? 0 : poOutstanding(p)), 0);
-    const pendingReceipts = list.filter((p) => p.status === "sent" || p.status === "partial_received").length;
-    const draft = list.filter((p) => p.status === "draft").length;
-    return { totalOrdered, totalAP, pendingReceipts, draft };
-  }, [list]);
+    const totalOrdered = page.reduce((s, p) => s + (p.status === "cancelled" ? 0 : p.total), 0);
+    const receivedOrders = page.filter((p) => p.status === "received").length;
+    const pendingReceipts = page.filter((p) => p.status === "sent" || p.status === "partial_received").length;
+    const draft = page.filter((p) => p.status === "draft").length;
+    return { totalOrdered, receivedOrders, pendingReceipts, draft };
+  }, [page]);
 
   return (
     <>
@@ -70,17 +63,17 @@ export default function POListPage() {
       />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <Kpi label="Total ordered" value={currency(stats.totalOrdered)} icon={ShoppingCart} color="text-brand-700 bg-brand-50" />
-        <Kpi label="Outstanding (A/P)" value={currency(stats.totalAP)} icon={DollarSign} color="text-red-700 bg-red-50" />
-        <Kpi label="Awaiting receipt" value={stats.pendingReceipts} icon={Truck} color="text-amber-700 bg-amber-50" active={status === "pending_receipt"} onClick={() => setStatus(status === "pending_receipt" ? "all" : "pending_receipt" as never)} />
-        <Kpi label="Drafts" value={stats.draft} icon={AlertCircle} color="text-slate-700 bg-slate-100" active={status === "draft"} onClick={() => setStatus(status === "draft" ? "all" : "draft")} />
+        <Kpi label="Total Ordered" value={currency(stats.totalOrdered)} icon={ShoppingCart} color="text-brand-700 bg-brand-50" />
+        <Kpi label="Received Orders" value={stats.receivedOrders} icon={CheckCircle} color="text-emerald-700 bg-emerald-50" />
+        <Kpi label="Pending Delivery" value={stats.pendingReceipts} icon={Truck} color="text-amber-700 bg-amber-50" active={status === "pending_receipt"} onClick={() => setStatus(status === "pending_receipt" ? "all" : "pending_receipt" as never)} />
+        <Kpi label="Draft POs" value={stats.draft} icon={AlertCircle} color="text-slate-700 bg-slate-100" active={status === "draft"} onClick={() => setStatus(status === "draft" ? "all" : "draft")} />
       </div>
 
       <Card>
         <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row gap-2 sm:items-center">
           <div className="relative flex-1 max-w-sm">
             <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search P.O# or supplier..." className="pl-9" />
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search exact P.O#..." className="pl-9" />
           </div>
           <Select value={status} onChange={(e) => setStatus(e.target.value as never)} className="max-w-[180px]">
             <option value="all">All statuses</option>
@@ -148,6 +141,7 @@ export default function POListPage() {
           pageIndex={pageIndex} pageCount={pageCount}
           pageSize={pageSize} setPageSize={setPageSize}
           start={start} end={end} total={total}
+          hasMore={hasMore}
           onPrev={prev} onNext={next}
         />
       </Card>
@@ -155,7 +149,7 @@ export default function POListPage() {
   );
 }
 
-function Kpi({ label, value, icon: Icon, color, active, onClick }: { label: string; value: string | number; icon: typeof DollarSign; color: string; active?: boolean; onClick?: () => void }) {
+function Kpi({ label, value, icon: Icon, color, active, onClick }: { label: string; value: string | number; icon: LucideIcon; color: string; active?: boolean; onClick?: () => void }) {
   return (
     <Card
       className={[

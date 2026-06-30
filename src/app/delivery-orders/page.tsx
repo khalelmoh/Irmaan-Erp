@@ -13,9 +13,9 @@ import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { Pagination } from "@/components/ui/Pagination";
 import { Plus, Search, Eye, Printer } from "lucide-react";
 import { currency, formatDate } from "@/lib/utils";
-import { usePaginatedList } from "@/hooks/usePaginatedList";
+import { useCursorPaginatedList } from "@/hooks/useCursorPaginatedList";
 import { useToast } from "@/contexts/ToastContext";
-import { withRetry, errorMessage } from "@/lib/retry";
+import { errorMessage } from "@/lib/retry";
 import type { DeliveryOrder, DOStatus } from "@/types";
 
 const statusVariant: Record<DOStatus, "muted" | "info" | "success" | "danger"> = {
@@ -24,36 +24,26 @@ const statusVariant: Record<DOStatus, "muted" | "info" | "success" | "danger"> =
 
 export default function DOListPage() {
   const toast = useToast();
-  const [list, setList] = useState<DeliveryOrder[]>([]);
   const [status, setStatus] = useState<"all" | DOStatus>("all");
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    withRetry(() => dataAdapter.deliveryOrders.list())
-      .then((d) => { setList(d); setLoading(false); })
-      .catch((err) => {
-        toast.error("Couldn't load delivery orders", errorMessage(err));
-        setLoading(false);
-      });
-  }, [toast]);
-
-  const filterFn = useCallback(
-    (d: DeliveryOrder) => status === "all" || d.status === status,
+  const loadPage = useCallback(
+    (options: Parameters<typeof dataAdapter.deliveryOrders.listPage>[0]) =>
+      dataAdapter.deliveryOrders.listPage({ ...options, status }),
     [status],
   );
 
   const {
     page, q, setQ, pageIndex, pageCount, pageSize, setPageSize,
-    next, prev, start, end, total,
-  } = usePaginatedList(list, {
-    searchableFields: (d) => [
-      d.doNumber, d.customerSnapshot.name,
-      d.loadingDetails.destination, d.loadingDetails.truckPlate,
-      d.loadingDetails.driverName, d.salespersonName,
-    ],
-    filterFn,
+    next, prev, start, end, total, hasMore, loading, error,
+  } = useCursorPaginatedList<DeliveryOrder>({
+    loadPage,
+    resetKeys: [status],
     pageSize: 25,
   });
+
+  useEffect(() => {
+    if (error) toast.error("Couldn't load delivery orders", errorMessage(error));
+  }, [error, toast]);
 
   return (
     <>
@@ -74,7 +64,7 @@ export default function DOListPage() {
             <Input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search DO#, customer, truck, driver, destination..."
+              placeholder="Search exact DO#..."
               className="pl-9"
             />
           </div>
@@ -145,6 +135,7 @@ export default function DOListPage() {
           start={start}
           end={end}
           total={total}
+          hasMore={hasMore}
           onPrev={prev}
           onNext={next}
         />

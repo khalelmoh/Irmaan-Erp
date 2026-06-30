@@ -10,6 +10,7 @@
 import { cert, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { existsSync, readFileSync } from "fs";
+import { resolve } from "path";
 import { normalizeBackupPayload } from "../src/lib/server/backup-format";
 
 function loadLocalEnvironment() {
@@ -24,7 +25,13 @@ function getServiceAccount() {
   loadLocalEnvironment();
   const serviceAccountPath =
     process.env.GOOGLE_APPLICATION_CREDENTIALS || "./service-account.json";
-  if (existsSync(serviceAccountPath)) return require(serviceAccountPath);
+  if (existsSync(serviceAccountPath)) {
+    const serviceAccount = require(resolve(serviceAccountPath));
+    return {
+      ...serviceAccount,
+      projectId: serviceAccount.projectId ?? serviceAccount.project_id,
+    };
+  }
   if (
     process.env.FIREBASE_PROJECT_ID &&
     process.env.FIREBASE_CLIENT_EMAIL &&

@@ -341,17 +341,11 @@ export const createDeliveryOrder = onCall<{ document: Record<string, any> }>(
               productId: item.productId,
               productName: item.name,
               quantity,
-              allocatedAt: FieldValue.serverTimestamp(),
+              allocatedAt: new Date().toISOString(),
               allocatedBy: actorUid,
             });
             remaining -= quantity;
             if (remaining <= 0.001) break;
-          }
-          if (remaining > 0.001) {
-            throw new HttpsError(
-              "failed-precondition",
-              `Insufficient received PO stock for ${item.name}`,
-            );
           }
         }
       }
@@ -627,17 +621,11 @@ export const transitionDeliveryOrder = onCall<{ id: string; status: string }>(
             productId: item.productId,
             productName: item.name,
             quantity,
-            allocatedAt: FieldValue.serverTimestamp(),
+            allocatedAt: new Date().toISOString(),
             allocatedBy: actorUid,
           });
           remaining -= quantity;
           if (remaining <= 0.001) break;
-        }
-        if (remaining > 0.001) {
-          throw new HttpsError(
-            "failed-precondition",
-            `Insufficient received PO stock for ${item.name}`,
-          );
         }
       }
 
@@ -1479,7 +1467,7 @@ export const verifyDocument = onCall<{ id: string }>(async (req) => {
 export const createSalesOrder = onCall<{ document: Record<string, any> }>(async (req) => {
   if (!req.auth) throw new HttpsError("unauthenticated", "Sign in required");
   const actorUid = req.auth.uid;
-  const user = await requireRole(actorUid, ["admin", "manager", "sales"]);
+  await requireRole(actorUid, ["admin", "manager", "sales"]);
   const input = req.data.document ?? {};
   const requestedItems = validateInvoiceItems(input.items);
   const taxRate = validateTaxRate(input.taxRate);
@@ -1491,6 +1479,11 @@ export const createSalesOrder = onCall<{ document: Record<string, any> }>(async 
   }
   if (typeof input.customerId !== "string" || !input.customerId) {
     throw new HttpsError("invalid-argument", "Customer is required");
+  }
+  const salespersonName =
+    typeof input.salespersonName === "string" ? input.salespersonName.trim() : "";
+  if (!salespersonName) {
+    throw new HttpsError("invalid-argument", "Salesperson is required");
   }
 
   const salesOrderRef = db.collection("sales_orders").doc();
@@ -1533,7 +1526,7 @@ export const createSalesOrder = onCall<{ document: Record<string, any> }>(async 
         phone: customer.phone ?? "",
       },
       salespersonId: actorUid,
-      salespersonName: user.displayName ?? user.email ?? "User",
+      salespersonName,
       orderDate,
       ...(validUntil ? { validUntil } : {}),
       items,

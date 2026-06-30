@@ -132,7 +132,7 @@ export function DeliveryOrderForm({ nextNumberPreview, defaultSalesperson, defau
             <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
               <tr>
                 <th className="text-left px-3 py-2 w-[30%]">Product</th>
-                <th className="text-right px-3 py-2 w-[10%]">PO Available</th>
+                <th className="text-right px-3 py-2 w-[10%]">Stock Available</th>
                 <th className="text-left px-3 py-2 w-[12%]">Quantity</th>
                 <th className="text-left px-3 py-2 w-[10%]">Unit</th>
                 <th className="text-left px-3 py-2 w-[14%]">Unit price</th>
@@ -147,7 +147,8 @@ export function DeliveryOrderForm({ nextNumberPreview, defaultSalesperson, defau
                 const product = products.find((p) => p.id === productId);
                 const avail = poAvailable[productId] ?? 0;
                 const qty = Number(items[idx]?.quantity) || 0;
-                const insufficient = product && qty > avail;
+                const stockAvailable = product?.stock ?? 0;
+                const insufficient = product && qty > stockAvailable;
                 return (
                   <tr key={f.id} className="border-t border-slate-100 align-top">
                     <td className="px-3 py-2">
@@ -159,8 +160,8 @@ export function DeliveryOrderForm({ nextNumberPreview, defaultSalesperson, defau
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums text-xs pt-3">
                       {product ? (
-                        <span className={insufficient ? "text-red-600 font-semibold" : "text-slate-600"} title={`Total physical stock is ${product.stock}`}>
-                          {avail.toLocaleString()}
+                        <span className={insufficient ? "text-red-600 font-semibold" : "text-slate-600"} title={`PO-backed stock is ${avail.toLocaleString()}`}>
+                          {stockAvailable.toLocaleString()}
                         </span>
                       ) : <span className="text-slate-400">—</span>}
                     </td>
@@ -169,7 +170,7 @@ export function DeliveryOrderForm({ nextNumberPreview, defaultSalesperson, defau
                       {insufficient && (
                         <div className="text-xs text-red-600 mt-1 flex items-center gap-1">
                           <AlertTriangle className="h-3 w-3" />
-                          Exceeds PO stock by {(qty - avail).toLocaleString()}
+                          Exceeds stock by {(qty - stockAvailable).toLocaleString()}
                         </div>
                       )}
                       {errors.items?.[idx]?.quantity && <div className="text-xs text-red-600 mt-1">{errors.items[idx]?.quantity?.message as string}</div>}
@@ -203,7 +204,7 @@ export function DeliveryOrderForm({ nextNumberPreview, defaultSalesperson, defau
         {items.some(it => it.productId && Number(it.quantity) > 0) && (
           <div className="mt-6 pt-4 border-t border-slate-100">
             <h3 className="text-sm font-semibold text-slate-700 mb-2">Allocation Preview</h3>
-            <div className="text-xs text-slate-500 mb-3">Stock will be consumed from the following Purchase Orders (FIFO):</div>
+            <div className="text-xs text-slate-500 mb-3">PO-backed stock will be allocated FIFO; any remainder uses stock on hand/opening balance.</div>
             <div className="bg-slate-50 rounded-md border border-slate-200 overflow-hidden">
               <table className="w-full text-sm">
                 <thead className="bg-slate-100 text-slate-600 text-xs">
@@ -220,6 +221,7 @@ export function DeliveryOrderForm({ nextNumberPreview, defaultSalesperson, defau
                     const qty = Number(it.quantity) || 0;
                     if (qty <= 0) return null;
                     const breakdown = poBreakdowns[productId] || [];
+                    const product = products.find((p) => p.id === productId);
                     
                     let remainingToAllocate = qty;
                     const rows = [];
@@ -236,11 +238,24 @@ export function DeliveryOrderForm({ nextNumberPreview, defaultSalesperson, defau
                       remainingToAllocate -= allocQty;
                     }
                     if (remainingToAllocate > 0) {
+                      const shortfall = product ? Math.max(0, qty - product.stock) : 0;
+                      const stockOnHandQty = Math.max(0, remainingToAllocate - shortfall);
+                      if (stockOnHandQty > 0) {
+                        rows.push(
+                          <tr key={`${idx}-opening-balance`}>
+                            <td className="px-3 py-2 text-slate-700">{it.name}</td>
+                            <td className="px-3 py-2 text-slate-700 text-xs italic">Stock on hand / opening balance</td>
+                            <td className="px-3 py-2 text-right tabular-nums text-emerald-700 font-medium">{stockOnHandQty.toLocaleString()}</td>
+                          </tr>
+                        );
+                      }
+                    }
+                    if (product && qty > product.stock) {
                       rows.push(
                         <tr key={`${idx}-unfulfilled`} className="bg-red-50">
                           <td className="px-3 py-2 text-red-700">{it.name}</td>
                           <td className="px-3 py-2 text-red-700 text-xs italic">Unfulfilled</td>
-                          <td className="px-3 py-2 text-right tabular-nums text-red-700 font-medium">{remainingToAllocate.toLocaleString()}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-red-700 font-medium">{(qty - product.stock).toLocaleString()}</td>
                         </tr>
                       );
                     }
