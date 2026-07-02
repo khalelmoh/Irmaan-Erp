@@ -3,22 +3,22 @@
 /* eslint-disable jsx-a11y/alt-text -- React PDF Image is not a DOM img element. */
 import {
   Document, Page, Text, View, StyleSheet, Image,
-  Svg, Path, Rect, Defs, LinearGradient, Stop,
 } from "@react-pdf/renderer";
 import { COMPANY, currency, formatDate } from "@/lib/utils";
 import type { Invoice } from "@/types";
 import { outstanding } from "@/lib/invoice";
 
 const s = StyleSheet.create({
-  page: { padding: 36, fontSize: 10, fontFamily: "Helvetica", color: "#0f172a" },
-  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2 solid #1e3a8a", paddingBottom: 10 },
+  page: { padding: 34, fontSize: 10, fontFamily: "Helvetica", color: "#0f172a" },
+  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2 solid #1e3a8a", paddingBottom: 12 },
   brandRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  logo: { width: 84, height: 84, objectFit: "contain" },
   brandText: { marginLeft: 10 },
-  brandName: { fontSize: 14, fontWeight: 700, color: "#1e3a8a" },
+  brandName: { fontSize: 15, fontWeight: 700, color: "#1e3a8a" },
   smallMuted: { fontSize: 8, color: "#64748b" },
   metaRight: { alignItems: "flex-end" },
   docTitle: { fontSize: 9, color: "#64748b", letterSpacing: 2 },
-  docNumber: { fontSize: 18, fontWeight: 700, color: "#1e3a8a", marginTop: 2 },
+  docNumber: { fontSize: 20, fontWeight: 700, color: "#1e3a8a", marginTop: 2 },
   sectionRow: { flexDirection: "row", gap: 10, marginTop: 12 },
   card: { border: "1 solid #e2e8f0", padding: 8, borderRadius: 3, flex: 1 },
   cardLabel: { fontSize: 8, color: "#64748b", letterSpacing: 1, marginBottom: 3 },
@@ -36,30 +36,24 @@ const s = StyleSheet.create({
   grandTotalRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 6, borderTop: "2 solid #94a3b8", borderBottom: "2 solid #94a3b8", marginTop: 4 },
   grandLabel: { fontSize: 12, fontWeight: 700 },
   grandValue: { fontSize: 12, fontWeight: 700 },
-  payBox: { marginTop: 16, border: "1 solid #e2e8f0", padding: 8, borderRadius: 3 },
+  notesBox: { marginTop: 14 },
+  notesContent: { border: "1 solid #e2e8f0", borderRadius: 3, padding: 8, color: "#334155", fontSize: 9 },
+  paymentRow: { flexDirection: "row", gap: 16, marginTop: 16 },
+  payBox: { border: "1 solid #e2e8f0", padding: 8, borderRadius: 3, flex: 1 },
+  payReference: { marginTop: 5, paddingTop: 5, borderTop: "1 solid #f1f5f9", color: "#64748b", fontSize: 9 },
+  qrBox: { width: 90, alignItems: "center" },
+  qrCaption: { fontSize: 7, color: "#64748b", marginTop: 3, textAlign: "center" },
   footer: { marginTop: 24, paddingTop: 8, borderTop: "1 solid #e2e8f0", fontSize: 8, color: "#64748b", flexDirection: "row", justifyContent: "space-between" },
 });
 
-export function InvoicePdfDocument({ doc, qrDataUrl }: { doc: Invoice; qrDataUrl?: string }) {
+export function InvoicePdfDocument({ doc, qrDataUrl, logoSrc }: { doc: Invoice; qrDataUrl?: string; logoSrc?: string }) {
   const out = outstanding(doc);
   return (
     <Document title={doc.invoiceNumber} author={COMPANY.name}>
       <Page size="A4" style={s.page}>
         <View style={s.headerRow}>
           <View style={s.brandRow}>
-            <Svg width={34} height={34} viewBox="0 0 40 40">
-              <Defs>
-                <LinearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-                  <Stop offset="0" stopColor="#1d4ed8" />
-                  <Stop offset="1" stopColor="#0b1e3f" />
-                </LinearGradient>
-              </Defs>
-              <Rect x={2} y={2} width={36} height={36} rx={9} fill="url(#g)" />
-              <Rect x={12} y={9} width={16} height={2.6} rx={1} fill="#ffffff" />
-              <Rect x={18.4} y={11.6} width={3.2} height={13} fill="#ffffff" />
-              <Rect x={12} y={24.6} width={16} height={2.6} rx={1} fill="#ffffff" />
-              <Path d="M8 31 Q 20 27 32 31" stroke="#60a5fa" strokeWidth={1.8} fill="none" />
-            </Svg>
+            {logoSrc && <Image src={logoSrc} style={s.logo} />}
             <View style={s.brandText}>
               <Text style={s.brandName}>{COMPANY.name}</Text>
               <Text style={s.smallMuted}>{COMPANY.tagline}</Text>
@@ -113,6 +107,16 @@ export function InvoicePdfDocument({ doc, qrDataUrl }: { doc: Invoice; qrDataUrl
               <Text style={[s.td, { width: "17%", textAlign: "right", fontWeight: 700 }]}>{currency(it.lineTotal)}</Text>
             </View>
           ))}
+          {Array.from({ length: Math.max(0, 4 - doc.items.length) }).map((_, i) => (
+            <View key={`f-${i}`} style={s.tr}>
+              <Text style={[s.td, { width: "7%" }]}> </Text>
+              <Text style={[s.td, { flex: 1 }]}> </Text>
+              <Text style={[s.td, { width: "10%" }]}> </Text>
+              <Text style={[s.td, { width: "10%" }]}> </Text>
+              <Text style={[s.td, { width: "16%" }]}> </Text>
+              <Text style={[s.td, { width: "17%" }]}> </Text>
+            </View>
+          ))}
         </View>
 
         <View style={s.totalsBox}>
@@ -142,16 +146,28 @@ export function InvoicePdfDocument({ doc, qrDataUrl }: { doc: Invoice; qrDataUrl
           )}
         </View>
 
-        <View style={s.payBox}>
-          <Text style={s.cardLabel}>PAYMENT INSTRUCTIONS</Text>
-          <Text style={s.cardSub}>Bank: Dahabshiil Bank International</Text>
-          <Text style={s.cardSub}>Account: Irmaan Trading Company</Text>
-          <Text style={s.cardSub}>A/C No: 0123-4567-8910</Text>
-          <Text style={[s.cardSub, { marginTop: 4 }]}>Please use {doc.invoiceNumber} as the payment reference.</Text>
+        {doc.notes && (
+          <View style={s.notesBox}>
+            <Text style={s.cardLabel}>NOTES</Text>
+            <Text style={s.notesContent}>{doc.notes}</Text>
+          </View>
+        )}
+
+        <View style={s.paymentRow}>
+          <View style={s.payBox}>
+            <Text style={s.cardLabel}>PAYMENT INSTRUCTIONS</Text>
+            <Text style={s.cardSub}>Bank: Dahabshiil Bank International</Text>
+            <Text style={s.cardSub}>Account: Irmaan Trading Company</Text>
+            <Text style={s.cardSub}>A/C No: 0123-4567-8910</Text>
+            <Text style={s.cardSub}>ZAAD: 401215</Text>
+            <Text style={s.cardSub}>EDAHAB: 761705</Text>
+            <Text style={s.payReference}>Please use {doc.invoiceNumber} as the payment reference.</Text>
+          </View>
           {qrDataUrl && (
-            <View style={{ position: "absolute", right: 8, top: 8, alignItems: "center" }}>
-              <Image src={qrDataUrl} style={{ width: 70, height: 70 }} />
-              <Text style={{ fontSize: 7, color: "#64748b", marginTop: 2 }}>Verify</Text>
+            <View style={s.qrBox}>
+              <Image src={qrDataUrl} style={{ width: 82, height: 82 }} />
+              <Text style={s.qrCaption}>Scan to verify</Text>
+              <Text style={s.qrCaption}>{doc.invoiceNumber}</Text>
             </View>
           )}
         </View>
