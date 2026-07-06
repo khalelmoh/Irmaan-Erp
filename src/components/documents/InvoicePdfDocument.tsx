@@ -3,7 +3,6 @@
 /* eslint-disable jsx-a11y/alt-text -- React PDF Image is not a DOM img element. */
 import {
   Document, Page, Text, View, StyleSheet, Image,
-  Svg, Path, Rect, Defs, LinearGradient, Stop,
 } from "@react-pdf/renderer";
 import { COMPANY, currency, formatDate } from "@/lib/utils";
 import type { Invoice } from "@/types";
@@ -13,6 +12,7 @@ const s = StyleSheet.create({
   page: { padding: 36, fontSize: 10, fontFamily: "Helvetica", color: "#0f172a" },
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2 solid #1e3a8a", paddingBottom: 10 },
   brandRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  logo: { width: 72, height: 72, objectFit: "contain" },
   brandText: { marginLeft: 10 },
   brandName: { fontSize: 14, fontWeight: 700, color: "#1e3a8a" },
   smallMuted: { fontSize: 8, color: "#64748b" },
@@ -37,6 +37,7 @@ const s = StyleSheet.create({
   grandLabel: { fontSize: 12, fontWeight: 700 },
   grandValue: { fontSize: 12, fontWeight: 700 },
   payBox: { marginTop: 16, border: "1 solid #e2e8f0", padding: 8, borderRadius: 3 },
+  notesBox: { marginTop: 14, border: "1 solid #e2e8f0", padding: 8, borderRadius: 3 },
   footer: { marginTop: 24, paddingTop: 8, borderTop: "1 solid #e2e8f0", fontSize: 8, color: "#64748b", flexDirection: "row", justifyContent: "space-between" },
 });
 
@@ -47,19 +48,7 @@ export function InvoicePdfDocument({ doc, qrDataUrl }: { doc: Invoice; qrDataUrl
       <Page size="A4" style={s.page}>
         <View style={s.headerRow}>
           <View style={s.brandRow}>
-            <Svg width={34} height={34} viewBox="0 0 40 40">
-              <Defs>
-                <LinearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-                  <Stop offset="0" stopColor="#1d4ed8" />
-                  <Stop offset="1" stopColor="#0b1e3f" />
-                </LinearGradient>
-              </Defs>
-              <Rect x={2} y={2} width={36} height={36} rx={9} fill="url(#g)" />
-              <Rect x={12} y={9} width={16} height={2.6} rx={1} fill="#ffffff" />
-              <Rect x={18.4} y={11.6} width={3.2} height={13} fill="#ffffff" />
-              <Rect x={12} y={24.6} width={16} height={2.6} rx={1} fill="#ffffff" />
-              <Path d="M8 31 Q 20 27 32 31" stroke="#60a5fa" strokeWidth={1.8} fill="none" />
-            </Svg>
+            <Image src="/logo.jpeg" style={s.logo} />
             <View style={s.brandText}>
               <Text style={s.brandName}>{COMPANY.name}</Text>
               <Text style={s.smallMuted}>{COMPANY.tagline}</Text>
@@ -142,11 +131,20 @@ export function InvoicePdfDocument({ doc, qrDataUrl }: { doc: Invoice; qrDataUrl
           )}
         </View>
 
+        {doc.notes && (
+          <View style={s.notesBox}>
+            <Text style={s.cardLabel}>NOTES</Text>
+            <Text style={s.cardSub}>{doc.notes}</Text>
+          </View>
+        )}
+
         <View style={s.payBox}>
           <Text style={s.cardLabel}>PAYMENT INSTRUCTIONS</Text>
           <Text style={s.cardSub}>Bank: Dahabshiil Bank International</Text>
           <Text style={s.cardSub}>Account: Irmaan Trading Company</Text>
           <Text style={s.cardSub}>A/C No: 0123-4567-8910</Text>
+          <Text style={s.cardSub}>ZAAD: 401215</Text>
+          <Text style={s.cardSub}>EDAHAB: 761705</Text>
           <Text style={[s.cardSub, { marginTop: 4 }]}>Please use {doc.invoiceNumber} as the payment reference.</Text>
           {qrDataUrl && (
             <View style={{ position: "absolute", right: 8, top: 8, alignItems: "center" }}>

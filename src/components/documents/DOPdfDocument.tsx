@@ -12,12 +12,6 @@ import {
   View,
   StyleSheet,
   Image,
-  Svg,
-  Path,
-  Rect,
-  Defs,
-  LinearGradient,
-  Stop,
 } from "@react-pdf/renderer";
 import { COMPANY, formatDate } from "@/lib/utils";
 import type { DeliveryOrder, POAllocation } from "@/types";
@@ -32,6 +26,7 @@ const s = StyleSheet.create({
     paddingBottom: 10,
   },
   brandRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  logo: { width: 72, height: 72, objectFit: "contain" },
   brandText: { marginLeft: 10 },
   brandName: { fontSize: 14, fontWeight: 700, color: "#1e3a8a" },
   metaRight: { alignItems: "flex-end" },
@@ -52,6 +47,7 @@ const s = StyleSheet.create({
   loadingRow: { flexDirection: "row", borderBottom: "1 solid #e2e8f0" },
   loadingTh: { backgroundColor: "#f1f5f9", padding: 6, fontSize: 9, fontWeight: 700, width: "20%" },
   loadingTd: { padding: 6, fontSize: 10, width: "30%" },
+  notesBox: { marginTop: 14, border: "1 solid #e2e8f0", padding: 8, borderRadius: 3 },
   signRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 36 },
   signBlock: { flex: 1, marginHorizontal: 6 },
   signLine: { borderBottom: "1 solid #94a3b8", height: 36 },
@@ -72,21 +68,7 @@ export function DOPdfDocument({ doc, qrDataUrl, allocations }: { doc: DeliveryOr
         {/* Header */}
         <View style={s.headerRow}>
           <View style={s.brandRow}>
-            <Svg width={34} height={34} viewBox="0 0 40 40">
-              <Defs>
-                <LinearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-                  <Stop offset="0" stopColor="#1d4ed8" />
-                  <Stop offset="1" stopColor="#0b1e3f" />
-                </LinearGradient>
-              </Defs>
-              <Rect x={2} y={2} width={36} height={36} rx={9} fill="url(#g)" />
-              {/* Letter "I" */}
-              <Rect x={12} y={9} width={16} height={2.6} rx={1} fill="#ffffff" />
-              <Rect x={18.4} y={11.6} width={3.2} height={13} fill="#ffffff" />
-              <Rect x={12} y={24.6} width={16} height={2.6} rx={1} fill="#ffffff" />
-              {/* Trade-route arc */}
-              <Path d="M8 31 Q 20 27 32 31" stroke="#60a5fa" strokeWidth={1.8} fill="none" />
-            </Svg>
+            <Image src="/logo.jpeg" style={s.logo} />
             <View style={s.brandText}>
               <Text style={s.brandName}>{COMPANY.name}</Text>
               <Text style={s.smallMuted}>{COMPANY.tagline}</Text>
@@ -179,6 +161,13 @@ export function DOPdfDocument({ doc, qrDataUrl, allocations }: { doc: DeliveryOr
             </Text>
           </View>
         </View>
+
+        {doc.notes && (
+          <View style={s.notesBox}>
+            <Text style={s.cardLabel}>NOTES</Text>
+            <Text style={s.cardSub}>{doc.notes}</Text>
+          </View>
+        )}
 
         {/* Signatures + QR */}
         <View style={s.signRow}>

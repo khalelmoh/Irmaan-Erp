@@ -3,7 +3,6 @@
 /* eslint-disable jsx-a11y/alt-text -- React PDF Image is not a DOM img element. */
 import {
   Document, Page, Text, View, StyleSheet, Image,
-  Svg, Path, Rect, Defs, LinearGradient, Stop,
 } from "@react-pdf/renderer";
 import { COMPANY, currency, formatDate } from "@/lib/utils";
 import type { SalesOrder } from "@/types";
@@ -13,6 +12,7 @@ const s = StyleSheet.create({
   page: { padding: 36, fontSize: 10, fontFamily: "Helvetica", color: "#0f172a" },
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2 solid #1e3a8a", paddingBottom: 10 },
   brandRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  logo: { width: 72, height: 72, objectFit: "contain" },
   brandText: { marginLeft: 10 },
   brandName: { fontSize: 14, fontWeight: 700, color: "#1e3a8a" },
   smallMuted: { fontSize: 8, color: "#64748b" },
@@ -36,6 +36,7 @@ const s = StyleSheet.create({
   grandTotalRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 6, borderTop: "2 solid #94a3b8", borderBottom: "2 solid #94a3b8", marginTop: 4 },
   grandLabel: { fontSize: 12, fontWeight: 700 },
   grandValue: { fontSize: 12, fontWeight: 700 },
+  notesBox: { marginTop: 14, border: "1 solid #e2e8f0", padding: 8, borderRadius: 3 },
   signRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 36 },
   signBlock: { flex: 1, marginHorizontal: 6 },
   signLine: { borderBottom: "1 solid #94a3b8", height: 36 },
@@ -49,19 +50,7 @@ export function SOPdfDocument({ doc, qrDataUrl }: { doc: SalesOrder; qrDataUrl?:
       <Page size="A4" style={s.page}>
         <View style={s.headerRow}>
           <View style={s.brandRow}>
-            <Svg width={34} height={34} viewBox="0 0 40 40">
-              <Defs>
-                <LinearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-                  <Stop offset="0" stopColor="#1d4ed8" />
-                  <Stop offset="1" stopColor="#0b1e3f" />
-                </LinearGradient>
-              </Defs>
-              <Rect x={2} y={2} width={36} height={36} rx={9} fill="url(#g)" />
-              <Rect x={12} y={9} width={16} height={2.6} rx={1} fill="#ffffff" />
-              <Rect x={18.4} y={11.6} width={3.2} height={13} fill="#ffffff" />
-              <Rect x={12} y={24.6} width={16} height={2.6} rx={1} fill="#ffffff" />
-              <Path d="M8 31 Q 20 27 32 31" stroke="#60a5fa" strokeWidth={1.8} fill="none" />
-            </Svg>
+            <Image src="/logo.jpeg" style={s.logo} />
             <View style={s.brandText}>
               <Text style={s.brandName}>{COMPANY.name}</Text>
               <Text style={s.smallMuted}>{COMPANY.tagline}</Text>
@@ -119,6 +108,13 @@ export function SOPdfDocument({ doc, qrDataUrl }: { doc: SalesOrder; qrDataUrl?:
           <View style={s.totalRow}><Text style={s.totalLabel}>Tax ({(doc.taxRate * 100).toFixed(2)}%)</Text><Text style={s.totalValue}>{currency(doc.taxAmount)}</Text></View>
           <View style={s.grandTotalRow}><Text style={s.grandLabel}>Total</Text><Text style={s.grandValue}>{currency(doc.total)}</Text></View>
         </View>
+
+        {doc.notes && (
+          <View style={s.notesBox}>
+            <Text style={s.cardLabel}>NOTES</Text>
+            <Text style={s.cardSub}>{doc.notes}</Text>
+          </View>
+        )}
 
         <View style={s.signRow}>
           <View style={s.signBlock}><View style={s.signLine} /><Text style={s.signLabel}>PREPARED BY</Text></View>

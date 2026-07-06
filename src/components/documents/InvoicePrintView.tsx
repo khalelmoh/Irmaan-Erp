@@ -122,6 +122,8 @@ export function InvoicePrintView({ doc, verifyUrl }: Props) {
             <div><span className="text-slate-500">Bank:</span> Dahabshiil Bank International</div>
             <div><span className="text-slate-500">Account:</span> Irmaan Trading Company</div>
             <div><span className="text-slate-500">A/C No:</span> 0123-4567-8910</div>
+            <div><span className="text-slate-500">ZAAD:</span> 401215</div>
+            <div><span className="text-slate-500">EDAHAB:</span> 761705</div>
             <div className="text-slate-500 pt-1 border-t border-slate-100">Please use {doc.invoiceNumber} as the payment reference.</div>
           </div>
         </div>
