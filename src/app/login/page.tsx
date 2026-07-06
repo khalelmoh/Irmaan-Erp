@@ -59,6 +59,8 @@ export default function LoginPage() {
           <p className="text-xs text-slate-400 mt-2">
             {activeAdapterName === "firebase"
               ? "Firebase authentication"
+              : activeAdapterName === "supabase"
+                ? "Supabase authentication"
               : "Demo authentication"}
           </p>
 

@@ -16,6 +16,8 @@ import QRCode from "qrcode";
 import { logActivity } from "@/lib/audit";
 import { currency } from "@/lib/utils";
 import { verificationUrl } from "@/lib/document-verification";
+import { useToast } from "@/contexts/ToastContext";
+import { errorMessage } from "@/lib/retry";
 
 const PDFDownloadButton = dynamic(() => import("./PDFDownloadButton").then((m) => m.PDFDownloadButton), {
   ssr: false,
@@ -29,11 +31,14 @@ const statusVariant: Record<DOStatus, "muted" | "info" | "success" | "danger"> =
 export default function DOViewPage() {
   const params = useParams<{ id: string }>();
   const { user } = useAuth();
+  const toast = useToast();
   const search = useSearchParams();
   const [doc, setDoc] = useState<DeliveryOrder | null>(null);
   const [allocations, setAllocations] = useState<POAllocation[]>([]);
   const [qrDataUrl, setQrDataUrl] = useState<string | undefined>();
   const [verifyUrl, setVerifyUrl] = useState("");
+  const [issuing, setIssuing] = useState(false);
+  const [delivering, setDelivering] = useState(false);
 
   useEffect(() => {
     if (!params.id) return;
@@ -63,35 +68,49 @@ export default function DOViewPage() {
 
   async function markDelivered() {
     if (!doc) return;
-    const updated = await dataAdapter.deliveryOrders.update(doc.id, { status: "delivered" });
-    setDoc(updated);
-    await logActivity(user, {
-      action: "do.mark_delivered",
-      entityType: "delivery_order",
-      entityId: doc.id,
-      entityLabel: doc.doNumber,
-      summary: `Marked ${doc.doNumber} as delivered (${doc.customerSnapshot.name})`,
-      diff: { status: { from: "issued", to: "delivered" } },
-    });
+    setDelivering(true);
+    try {
+      const updated = await dataAdapter.deliveryOrders.update(doc.id, { status: "delivered" });
+      setDoc(updated);
+      await logActivity(user, {
+        action: "do.mark_delivered",
+        entityType: "delivery_order",
+        entityId: doc.id,
+        entityLabel: doc.doNumber,
+        summary: `Marked ${doc.doNumber} as delivered (${doc.customerSnapshot.name})`,
+        diff: { status: { from: "issued", to: "delivered" } },
+      });
+      toast.success("Delivery marked delivered", `${doc.doNumber} is now delivered.`);
+    } catch (error) {
+      toast.error("Couldn't mark delivered", errorMessage(error));
+    } finally {
+      setDelivering(false);
+    }
   }
 
   async function issueOrder() {
-    if (!doc || doc.status !== "draft") return;
-    const updated = await dataAdapter.deliveryOrders.update(doc.id, { status: "issued" });
-    setDoc(updated);
-    const value = updated.items.reduce((s, it) => s + (Number(it.unitPrice) || 0) * Number(it.quantity), 0);
-    await logActivity(user, {
-      action: "do.issue",
-      entityType: "delivery_order",
-      entityId: doc.id,
-      entityLabel: doc.doNumber,
-      summary: `Issued ${doc.doNumber} to ${doc.customerSnapshot.name} (${currency(value)}, ${doc.items.length} line${doc.items.length === 1 ? "" : "s"})`,
-      diff: { status: { from: "draft", to: "issued" } },
-    });
-    
-    // Refresh to get allocations
-    const allocs = await dataAdapter.poAllocations.byDeliveryOrder(doc.id);
-    setAllocations(allocs);
+    if (!doc || doc.status !== "draft" || issuing) return;
+    setIssuing(true);
+    try {
+      const updated = await dataAdapter.deliveryOrders.update(doc.id, { status: "issued" });
+      const allocs = await dataAdapter.poAllocations.byDeliveryOrder(doc.id);
+      setDoc(updated);
+      setAllocations(allocs);
+      const value = updated.items.reduce((s, it) => s + (Number(it.unitPrice) || 0) * Number(it.quantity), 0);
+      await logActivity(user, {
+        action: "do.issue",
+        entityType: "delivery_order",
+        entityId: doc.id,
+        entityLabel: doc.doNumber,
+        summary: `Issued ${doc.doNumber} to ${doc.customerSnapshot.name} (${currency(value)}, ${doc.items.length} line${doc.items.length === 1 ? "" : "s"})`,
+        diff: { status: { from: "draft", to: "issued" } },
+      });
+      toast.success("Delivery order issued", `${doc.doNumber} is now ready for delivery.`);
+    } catch (error) {
+      toast.error("Couldn't issue delivery order", errorMessage(error));
+    } finally {
+      setIssuing(false);
+    }
   }
 
   function downloadQR() {
@@ -131,14 +150,14 @@ export default function DOViewPage() {
               <Button asChild variant="outline">
                 <Link href={`/delivery-orders/${doc.id}/edit`}>Edit</Link>
               </Button>
-              <Button onClick={issueOrder} className="bg-blue-600 hover:bg-blue-700">
-                <CheckCircle2 className="h-4 w-4" /> Issue Delivery
+              <Button onClick={issueOrder} disabled={issuing} className="bg-blue-600 hover:bg-blue-700">
+                <CheckCircle2 className="h-4 w-4" /> {issuing ? "Issuing..." : "Issue Delivery"}
               </Button>
             </>
           )}
           {doc.status === "issued" && (
-            <Button variant="outline" onClick={markDelivered}>
-              <CheckCircle2 className="h-4 w-4" /> Mark delivered
+            <Button variant="outline" onClick={markDelivered} disabled={delivering}>
+              <CheckCircle2 className="h-4 w-4" /> {delivering ? "Marking..." : "Mark delivered"}
             </Button>
           )}
           {!doc.invoiceId && doc.status !== "cancelled" && doc.status !== "draft" && (

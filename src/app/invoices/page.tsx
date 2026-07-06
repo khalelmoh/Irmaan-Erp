@@ -15,51 +15,47 @@ import { Plus, Search, Eye, FileText, DollarSign, AlertCircle } from "lucide-rea
 import { currency, formatDate } from "@/lib/utils";
 import type { Invoice, InvoiceStatus } from "@/types";
 import { STATUS_VARIANT, outstanding, effectiveStatus } from "@/lib/invoice";
-import { usePaginatedList } from "@/hooks/usePaginatedList";
+import { useCursorPaginatedList } from "@/hooks/useCursorPaginatedList";
 import { useToast } from "@/contexts/ToastContext";
-import { withRetry, errorMessage } from "@/lib/retry";
+import { errorMessage } from "@/lib/retry";
 
 export default function InvoiceListPage() {
   const toast = useToast();
-  const [list, setList] = useState<Invoice[]>([]);
   const [status, setStatus] = useState<"all" | InvoiceStatus>("all");
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    withRetry(() => dataAdapter.invoices.list())
-      .then((d) => { setList(d); setLoading(false); })
-      .catch((err) => { toast.error("Couldn't load invoices", errorMessage(err)); setLoading(false); });
-  }, [toast]);
-
-  // Apply effectiveStatus to every invoice for filter purposes
-  const enriched = useMemo(
-    () => list.map((i) => ({ ...i, status: effectiveStatus(i) })),
-    [list],
-  );
-
-  const filterFn = useCallback(
-    (i: Invoice) => status === "all" || i.status === status,
+  const loadPage = useCallback(
+    (options: Parameters<typeof dataAdapter.invoices.listPage>[0]) =>
+      dataAdapter.invoices.listPage({ ...options, status }),
     [status],
   );
 
   const {
     page, q, setQ, pageIndex, pageCount, pageSize, setPageSize,
-    next, prev, start, end, total,
-  } = usePaginatedList(enriched, {
-    searchableFields: (i) => [i.invoiceNumber, i.customerSnapshot.name, i.notes ?? ""],
-    filterFn,
+    next, prev, start, end, total, hasMore, loading, error,
+  } = useCursorPaginatedList<Invoice>({
+    loadPage,
+    resetKeys: [status],
     pageSize: 25,
   });
 
+  useEffect(() => {
+    if (error) toast.error("Couldn't load invoices", errorMessage(error));
+  }, [error, toast]);
+
+  const displayPage = useMemo(
+    () => page.map((i) => ({ ...i, status: effectiveStatus(i) })),
+    [page],
+  );
+
   const totals = useMemo(() => {
-    const totalBilled = list.reduce((s, i) => s + (i.status === "cancelled" ? 0 : i.total), 0);
-    const totalPaid = list.reduce((s, i) => s + i.amountPaid, 0);
-    const totalOutstanding = list.reduce(
+    const totalBilled = page.reduce((s, i) => s + (i.status === "cancelled" ? 0 : i.total), 0);
+    const totalPaid = page.reduce((s, i) => s + i.amountPaid, 0);
+    const totalOutstanding = page.reduce(
       (s, i) => s + (i.status === "cancelled" || i.status === "draft" ? 0 : outstanding(i)), 0,
     );
-    const overdue = list.filter((i) => effectiveStatus(i) === "overdue").length;
+    const overdue = page.filter((i) => effectiveStatus(i) === "overdue").length;
     return { totalBilled, totalPaid, totalOutstanding, overdue };
-  }, [list]);
+  }, [page]);
 
   return (
     <>
@@ -74,17 +70,17 @@ export default function InvoiceListPage() {
       />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <Kpi label="Total billed" value={currency(totals.totalBilled)} icon={FileText} color="text-brand-700 bg-brand-50" />
-        <Kpi label="Total collected" value={currency(totals.totalPaid)} icon={DollarSign} color="text-emerald-700 bg-emerald-50" />
-        <Kpi label="Outstanding (A/R)" value={currency(totals.totalOutstanding)} icon={DollarSign} color="text-amber-700 bg-amber-50" />
-        <Kpi label="Overdue invoices" value={totals.overdue} icon={AlertCircle} color="text-red-700 bg-red-50" />
+        <Kpi label="Total Billed" value={currency(totals.totalBilled)} icon={FileText} color="text-brand-700 bg-brand-50" />
+        <Kpi label="Total Collected" value={currency(totals.totalPaid)} icon={DollarSign} color="text-emerald-700 bg-emerald-50" />
+        <Kpi label="Outstanding Balance" value={currency(totals.totalOutstanding)} icon={DollarSign} color="text-amber-700 bg-amber-50" />
+        <Kpi label="Overdue Invoices" value={totals.overdue} icon={AlertCircle} color="text-red-700 bg-red-50" />
       </div>
 
       <Card>
         <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row gap-2 sm:items-center">
           <div className="relative flex-1 max-w-sm">
             <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search invoice # or customer..." className="pl-9" />
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search exact invoice #..." className="pl-9" />
           </div>
           <Select value={status} onChange={(e) => setStatus(e.target.value as never)} className="max-w-[160px]">
             <option value="all">All statuses</option>
@@ -111,7 +107,7 @@ export default function InvoiceListPage() {
             </TR>
           </THead>
           <TBody>
-            {page.map((i) => {
+            {displayPage.map((i) => {
               const out = outstanding(i);
               const overdueSoon = i.status !== "paid" && i.status !== "cancelled" && new Date(i.dueDate).getTime() - Date.now() < 7 * 86400000;
               return (
@@ -145,6 +141,7 @@ export default function InvoiceListPage() {
           pageIndex={pageIndex} pageCount={pageCount}
           pageSize={pageSize} setPageSize={setPageSize}
           start={start} end={end} total={total}
+          hasMore={hasMore}
           onPrev={prev} onNext={next}
         />
       </Card>

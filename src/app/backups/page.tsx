@@ -10,6 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
 import { getFirebase } from "@/lib/firebase";
+import { getSupabase } from "@/lib/supabase";
+import { activeAdapterName } from "@/services/selectedAdapter";
 
 type BackupSummary = {
   fileName: string;
@@ -32,6 +34,18 @@ function formatExportTime(value: string) {
   }).format(new Date(value));
 }
 
+async function currentAccessToken() {
+  if (activeAdapterName === "supabase") {
+    const { data } = await getSupabase().auth.getSession();
+    return data.session?.access_token ?? null;
+  }
+  if (activeAdapterName === "firebase") {
+    const { auth } = getFirebase();
+    return auth.currentUser?.getIdToken(true) ?? null;
+  }
+  return null;
+}
+
 export default function BackupsPage() {
   const { user } = useAuth();
   const router = useRouter();
@@ -46,8 +60,7 @@ export default function BackupsPage() {
   async function downloadBackup() {
     setDownloading(true);
     try {
-      const { auth } = getFirebase();
-      const token = await auth.currentUser?.getIdToken(true);
+      const token = await currentAccessToken();
       if (!token) throw new Error("Sign in required");
 
       const response = await fetch("/api/admin/backup", {
@@ -119,7 +132,7 @@ export default function BackupsPage() {
                 <div>
                   <div className="font-medium text-slate-900">Protected by admin login</div>
                   <p className="text-sm text-slate-600 mt-1">
-                    The download API verifies the signed-in Firebase user and only allows active
+                    The download API verifies the signed-in user and only allows active
                     admin accounts to export data.
                   </p>
                 </div>

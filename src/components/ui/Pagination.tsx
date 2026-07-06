@@ -10,23 +10,39 @@ interface Props {
   setPageSize: (n: number) => void;
   start: number;
   end: number;
-  total: number;
+  total?: number | null;
+  hasMore?: boolean;
   onPrev: () => void;
   onNext: () => void;
   pageSizeOptions?: number[];
 }
 
 export function Pagination({
-  pageIndex, pageCount, pageSize, setPageSize,
-  start, end, total, onPrev, onNext,
+  pageIndex,
+  pageCount,
+  pageSize,
+  setPageSize,
+  start,
+  end,
+  total,
+  hasMore = pageIndex < pageCount - 1,
+  onPrev,
+  onNext,
   pageSizeOptions = [10, 25, 50, 100],
 }: Props) {
-  if (total === 0) return null;
+  if (total === 0 || start === 0) return null;
+
   return (
     <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 text-sm">
       <div className="text-slate-500 text-xs">
-        Showing <span className="font-medium text-slate-700 tabular-nums">{start}–{end}</span> of{" "}
-        <span className="font-medium text-slate-700 tabular-nums">{total.toLocaleString()}</span>
+        Showing <span className="font-medium text-slate-700 tabular-nums">{start}-{end}</span>
+        {typeof total === "number" ? (
+          <>
+            {" "}of <span className="font-medium text-slate-700 tabular-nums">{total.toLocaleString()}</span>
+          </>
+        ) : (
+          <span className="text-slate-400"> {hasMore ? "with more available" : "end of results"}</span>
+        )}
       </div>
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-1.5 text-xs text-slate-500">
@@ -50,12 +66,12 @@ export function Pagination({
             <ChevronLeft className="h-4 w-4" />
           </button>
           <div className="text-xs text-slate-600 tabular-nums px-2 min-w-[60px] text-center">
-            {pageIndex + 1} / {pageCount}
+            {typeof total === "number" ? `${pageIndex + 1} / ${pageCount}` : `Page ${pageIndex + 1}`}
           </div>
           <button
             type="button"
             onClick={onNext}
-            disabled={pageIndex >= pageCount - 1}
+            disabled={!hasMore}
             className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
             aria-label="Next page"
           >

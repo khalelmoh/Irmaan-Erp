@@ -22,6 +22,25 @@ export type Listable<T> = {
   remove(id: string): Promise<void>;
 };
 
+export type ListPageCursor = unknown;
+
+export interface ListPageOptions<TStatus extends string = string> {
+  pageSize: number;
+  cursor?: ListPageCursor | null;
+  status?: TStatus | "all";
+  search?: string;
+}
+
+export interface ListPageResult<T> {
+  items: T[];
+  nextCursor: ListPageCursor | null;
+  hasMore: boolean;
+}
+
+export type Pageable<T, TStatus extends string = string> = {
+  listPage(options: ListPageOptions<TStatus>): Promise<ListPageResult<T>>;
+};
+
 // ─── Company Settings ───────────────────────────────────────────────────────
 export interface CompanySettings {
   companyName: string;
@@ -48,7 +67,7 @@ export interface DataAdapter {
   signIn(email: string, password: string): Promise<User>;
   signOut(): Promise<void>;
   currentUser(): Promise<User | null>;
-  /** Sends a password reset email (Firebase) or stub-resets in mock. */
+  /** Sends a password reset email through the active auth provider, or stub-resets in mock. */
   requestPasswordReset(email: string): Promise<void>;
   verification: {
     get(id: string): Promise<VerificationResult | null>;
@@ -79,10 +98,10 @@ export interface DataAdapter {
       items: Array<{ productId: string; quantity: number }>,
     ): Promise<SalesOrder>;
   };
-  deliveryOrders: Listable<DeliveryOrder> & {
+  deliveryOrders: Listable<DeliveryOrder> & Pageable<DeliveryOrder, DeliveryOrder["status"]> & {
     nextNumber(): Promise<string>;
   };
-  purchaseOrders: Listable<PurchaseOrder> & {
+  purchaseOrders: Listable<PurchaseOrder> & Pageable<PurchaseOrder, PurchaseOrder["status"] | "pending_receipt"> & {
     nextNumber(): Promise<string>;
     requestApproval(poId: string): Promise<PurchaseOrder>;
     decideApproval(
@@ -117,7 +136,7 @@ export interface DataAdapter {
     byDeliveryOrder(doId: string): Promise<POAllocation[]>;
     byPurchaseOrder(poId: string): Promise<POAllocation[]>;
   };
-  invoices: Listable<Invoice> & {
+  invoices: Listable<Invoice> & Pageable<Invoice, Invoice["status"]> & {
     nextNumber(): Promise<string>;
     recordPayment(
       invoiceId: string,
@@ -153,7 +172,7 @@ export interface DataAdapter {
   users: {
     list(): Promise<User[]>;
     get(uid: string): Promise<User | null>;
-    /** Invite a new user. Mock creates locally; Firebase creates an Auth account + Firestore profile + sends reset email. */
+    /** Invite a new user through the active auth provider. Mock creates the profile locally. */
     invite(input: { email: string; displayName: string; role: User["role"] }): Promise<User>;
     update(uid: string, patch: Partial<Pick<User, "displayName" | "role" | "active">>): Promise<User>;
   };

@@ -21,7 +21,9 @@
     "check": "npm run typecheck && npm run lint && npm run build",
     "functions:build": "npm --prefix functions run build",
     "backup": "tsx scripts/backup.ts",
-    "restore": "tsx scripts/restore.ts"
+    "restore": "tsx scripts/restore.ts",
+    "supabase:create-admin": "tsx scripts/supabase-create-admin.ts",
+    "supabase:smoke": "tsx scripts/supabase-smoke-test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
@@ -32,6 +34,7 @@
     "@radix-ui/react-slot": "^1.1.0",
     "@radix-ui/react-toast": "^1.2.2",
     "@react-pdf/renderer": "^4.0.0",
+    "@supabase/supabase-js": "^2.110.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",

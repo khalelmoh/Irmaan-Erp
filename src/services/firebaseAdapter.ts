@@ -19,7 +19,11 @@ import {
   query,
   where,
   orderBy,
+  startAfter,
   limit as queryLimit,
+  type QueryConstraint,
+  type QueryDocumentSnapshot,
+  type DocumentData,
 } from "firebase/firestore";
 import {
   signInWithEmailAndPassword,
@@ -33,6 +37,8 @@ import type {
   CompanySettings,
   DataAdapter,
   Listable,
+  ListPageOptions,
+  ListPageResult,
   VerificationResult,
 } from "./types";
 import type {
@@ -121,6 +127,135 @@ async function nextSequence(name: string, prefix: string, width = 5) {
   const snap = await getDoc(doc(db, "counters", name));
   const next = (snap.exists() ? (snap.data().value as number) : 0) + 1;
   return `${prefix}-${padNumber(next, width)}`;
+}
+
+function boundedPageSize(size: number) {
+  return Math.min(Math.max(Math.trunc(size) || 25, 1), 100);
+}
+
+function normalizeFirestoreValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(normalizeFirestoreValue);
+  if (value && typeof value === "object") {
+    if (
+      "toDate" in value &&
+      typeof (value as { toDate?: unknown }).toDate === "function"
+    ) {
+      return (value as { toDate: () => Date }).toDate().toISOString();
+    }
+    return Object.fromEntries(
+      Object.entries(value).map(([key, child]) => [key, normalizeFirestoreValue(child)]),
+    );
+  }
+  return value;
+}
+
+function docData<T>(snapshot: { id: string; data: () => unknown }): T {
+  return {
+    id: snapshot.id,
+    ...(normalizeFirestoreValue(snapshot.data()) as object),
+  } as T;
+}
+
+type StatusFilter = string | string[] | undefined;
+
+function addStatusFilter(constraints: QueryConstraint[], status: StatusFilter) {
+  if (!status) return;
+  if (Array.isArray(status)) {
+    constraints.push(where("status", "in", status));
+  } else if (status !== "all") {
+    constraints.push(where("status", "==", status));
+  }
+}
+
+async function listDocumentPage<T extends { id: string }>(
+  collectionName: string,
+  numberField: string,
+  options: ListPageOptions,
+  status: StatusFilter = options.status,
+): Promise<ListPageResult<T>> {
+  const { db } = getFirebase();
+  const pageSize = boundedPageSize(options.pageSize);
+  const search = options.search?.trim().toUpperCase() ?? "";
+  const constraints: QueryConstraint[] = [];
+
+  addStatusFilter(constraints, status);
+
+  if (search) {
+    constraints.push(where(numberField, "==", search), queryLimit(pageSize));
+    const snap = await getDocs(query(collection(db, collectionName), ...constraints));
+    return {
+      items: snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) })) as T[],
+      nextCursor: null,
+      hasMore: false,
+    };
+  }
+
+  constraints.push(orderBy("createdAt", "desc"));
+  if (options.cursor) {
+    constraints.push(startAfter(options.cursor as QueryDocumentSnapshot<DocumentData>));
+  }
+  constraints.push(queryLimit(pageSize + 1));
+
+  const snap = await getDocs(query(collection(db, collectionName), ...constraints));
+  const visibleDocs = snap.docs.slice(0, pageSize);
+
+  return {
+    items: visibleDocs.map((d) => ({ id: d.id, ...(d.data() as object) })) as T[],
+    nextCursor: snap.docs.length > pageSize ? visibleDocs[visibleDocs.length - 1] : null,
+    hasMore: snap.docs.length > pageSize,
+  };
+}
+
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function effectiveInvoiceStatusForList(invoice: Invoice) {
+  if (invoice.status === "cancelled" || invoice.status === "draft" || invoice.status === "paid") {
+    return invoice.status;
+  }
+  if (invoice.amountPaid > 0 && invoice.amountPaid + 0.001 < invoice.total) return "partial";
+  if (new Date(invoice.dueDate).getTime() < Date.now()) return "overdue";
+  return "sent";
+}
+
+async function listInvoicePage(options: ListPageOptions<Invoice["status"]>): Promise<ListPageResult<Invoice>> {
+  const status = options.status;
+  const search = options.search?.trim();
+
+  if (search) {
+    const result = await listDocumentPage<Invoice>("invoices", "invoiceNumber", options, undefined);
+    if (!status || status === "all") return result;
+    return {
+      ...result,
+      items: result.items.filter((invoice) => effectiveInvoiceStatusForList(invoice) === status),
+    };
+  }
+
+  if (status === "overdue" || status === "sent") {
+    const { db } = getFirebase();
+    const pageSize = boundedPageSize(options.pageSize);
+    const constraints: QueryConstraint[] = [
+      where("status", "==", "sent"),
+      where("dueDate", status === "overdue" ? "<" : ">=", todayIsoDate()),
+      orderBy("dueDate", status === "overdue" ? "desc" : "asc"),
+    ];
+    if (options.cursor) {
+      constraints.push(startAfter(options.cursor as QueryDocumentSnapshot<DocumentData>));
+    }
+    constraints.push(queryLimit(pageSize + 1));
+
+    const snap = await getDocs(query(collection(db, "invoices"), ...constraints));
+    const visibleDocs = snap.docs.slice(0, pageSize);
+
+    return {
+      items: visibleDocs.map((d) => ({ id: d.id, ...(d.data() as object) })) as Invoice[],
+      nextCursor: snap.docs.length > pageSize ? visibleDocs[visibleDocs.length - 1] : null,
+      hasMore: snap.docs.length > pageSize,
+    };
+  }
+
+  return listDocumentPage<Invoice>("invoices", "invoiceNumber", options);
 }
 
 export const firebaseAdapter: DataAdapter = {
@@ -277,6 +412,7 @@ export const firebaseAdapter: DataAdapter = {
   deliveryOrders: {
     ...crud<DeliveryOrder>("delivery_orders"),
     nextNumber: () => nextSequence("delivery_orders", "DO"),
+    listPage: (options) => listDocumentPage<DeliveryOrder>("delivery_orders", "doNumber", options),
     async create(input) {
       const { db } = getFirebase();
       const result = await callServerOperation<
@@ -339,6 +475,12 @@ export const firebaseAdapter: DataAdapter = {
   purchaseOrders: {
     ...crud<PurchaseOrder>("purchase_orders"),
     nextNumber: () => nextSequence("purchase_orders", "PO"),
+    listPage: (options) => listDocumentPage<PurchaseOrder>(
+      "purchase_orders",
+      "poNumber",
+      options,
+      options.status === "pending_receipt" ? ["sent", "partial_received"] : options.status,
+    ),
     async requestApproval(poId) {
       const { db } = getFirebase();
       await callServerOperation<{ id: string }, { id: string }>(
@@ -491,6 +633,7 @@ export const firebaseAdapter: DataAdapter = {
   invoices: {
     ...crud<Invoice>("invoices"),
     nextNumber: () => nextSequence("invoices", "INV"),
+    listPage: listInvoicePage,
     async create(input) {
       const { db } = getFirebase();
       const result = await callServerOperation<
@@ -708,14 +851,14 @@ export const firebaseAdapter: DataAdapter = {
         queryLimit(MAX_QUERY_DOCUMENTS + 1),
       ));
       assertQueryBound(snap.size, "Stock movements");
-      return snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) })) as StockMovement[];
+      return snap.docs.map((d) => docData<StockMovement>(d));
     },
     async byProduct(productId) {
       const { db } = getFirebase();
       const snap = await getDocs(
         query(collection(db, "stock_movements"), where("productId", "==", productId), orderBy("at", "desc")),
       );
-      return snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) })) as StockMovement[];
+      return snap.docs.map((d) => docData<StockMovement>(d));
     },
     async adjust(productId, qty, reason, _recordedBy) {
       const { db } = getFirebase();
@@ -732,10 +875,7 @@ export const firebaseAdapter: DataAdapter = {
       }
       return {
         product: { id: productSnap.id, ...(productSnap.data() as object) } as Product,
-        movement: {
-          id: movementSnap.id,
-          ...(movementSnap.data() as object),
-        } as StockMovement,
+        movement: docData<StockMovement>(movementSnap),
       };
     },
   },

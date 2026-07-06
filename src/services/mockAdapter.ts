@@ -2,7 +2,7 @@
  * In-memory data adapter. Persists to localStorage so reloads keep state.
  * Mirrors the FirebaseAdapter API exactly so it can be swapped 1:1.
  */
-import type { DataAdapter, Listable, CompanySettings } from "./types";
+import type { DataAdapter, Listable, CompanySettings, ListPageOptions, ListPageResult } from "./types";
 import type {
   Customer,
   Supplier,
@@ -251,6 +251,69 @@ function crud<K extends keyof Store, T extends { id: string }>(
 }
 
 // ─── adapter ───────────────────────────────────────────────────────────────
+function mockListPage<T extends { id: string; status: string }>(
+  items: T[],
+  options: ListPageOptions,
+  numberField: keyof T,
+  status?: string | string[],
+): ListPageResult<T> {
+  const pageSize = Math.min(Math.max(Math.trunc(options.pageSize) || 25, 1), 100);
+  const offset = typeof options.cursor === "number" ? options.cursor : 0;
+  const search = options.search?.trim().toUpperCase() ?? "";
+  const statuses = Array.isArray(status) ? status : status && status !== "all" ? [status] : [];
+  let result = items.slice().reverse();
+
+  if (statuses.length > 0) {
+    result = result.filter((item) => statuses.includes(item.status));
+  }
+
+  if (search) {
+    result = result.filter((item) => String(item[numberField]).toUpperCase() === search);
+  }
+
+  const page = result.slice(offset, offset + pageSize);
+  const nextOffset = offset + page.length;
+
+  return {
+    items: page,
+    nextCursor: nextOffset < result.length ? nextOffset : null,
+    hasMore: nextOffset < result.length,
+  };
+}
+
+function effectiveInvoiceStatusForList(invoice: Invoice): InvoiceStatus {
+  if (invoice.status === "cancelled" || invoice.status === "draft" || invoice.status === "paid") {
+    return invoice.status;
+  }
+  if (invoice.amountPaid > 0 && invoice.amountPaid + 0.001 < invoice.total) return "partial";
+  if (new Date(invoice.dueDate).getTime() < Date.now()) return "overdue";
+  return "sent";
+}
+
+function mockInvoiceListPage(options: ListPageOptions<InvoiceStatus>): ListPageResult<Invoice> {
+  const pageSize = Math.min(Math.max(Math.trunc(options.pageSize) || 25, 1), 100);
+  const offset = typeof options.cursor === "number" ? options.cursor : 0;
+  const search = options.search?.trim().toUpperCase() ?? "";
+  let result = load().invoices.slice().reverse();
+
+  if (search) {
+    result = result.filter((invoice) => invoice.invoiceNumber.toUpperCase() === search);
+  }
+
+  if (options.status && options.status !== "all") {
+    result = result.filter((invoice) => effectiveInvoiceStatusForList(invoice) === options.status);
+  }
+
+  const page = result.slice(offset, offset + pageSize);
+  const nextOffset = offset + page.length;
+
+  return {
+    items: page,
+    nextCursor: nextOffset < result.length ? nextOffset : null,
+    hasMore: nextOffset < result.length,
+  };
+}
+
 const customers = crud<"customers", Customer>("customers");
 const suppliers = crud<"suppliers", Supplier>("suppliers");
 const products = crud<"products", Product>("products");
@@ -386,9 +449,6 @@ function allocateFromPOs(s: Store, doId: string, doNumber: string, items: { prod
       if (remainingToAllocate <= 0.001) break;
     }
 
-    if (remainingToAllocate > 0.001) {
-      throw new Error(`Not enough PO stock available to allocate ${item.quantity} units of ${item.name}. Missing ${remainingToAllocate} units.`);
-    }
   }
 
   return newAllocations;
@@ -527,6 +587,9 @@ const deliveryOrders: DataAdapter["deliveryOrders"] = {
   async nextNumber() {
     return tx((s) => `DO-${padNumber(s.counters.do + 1, 5)}`);
   },
+  async listPage(options) {
+    return mockListPage(load().deliveryOrders, options, "doNumber", options.status);
+  },
   async create(input) {
     return tx((s) => {
       s.counters.do += 1;
@@ -660,6 +723,14 @@ const purchaseOrders: DataAdapter["purchaseOrders"] = {
   ...poBase,
   async nextNumber() {
     return tx((s) => `PO-${padNumber(s.counters.po + 1, 5)}`);
+  },
+  async listPage(options) {
+    return mockListPage(
+      load().purchaseOrders,
+      options,
+      "poNumber",
+      options.status === "pending_receipt" ? ["sent", "partial_received"] : options.status,
+    );
   },
   async requestApproval(poId) {
     return tx((s) => {
@@ -1044,6 +1115,9 @@ const invoices: DataAdapter["invoices"] = {
   ...invBase,
   async nextNumber() {
     return tx((s) => `INV-${padNumber(s.counters.inv + 1, 5)}`);
+  },
+  async listPage(options) {
+    return mockInvoiceListPage(options);
   },
   async create(input) {
     return tx((s) => {
