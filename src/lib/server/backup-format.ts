@@ -1,5 +1,3 @@
-import { Timestamp } from "firebase-admin/firestore";
-
 export const BACKUP_COLLECTIONS = [
   "users",
   "settings",
@@ -29,8 +27,14 @@ export interface BackupPayload {
   data: Record<string, BackupDocument[]>;
 }
 
+function isFirestoreTimestamp(value: unknown): value is { toDate(): Date } {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as { toDate?: unknown; constructor?: { name?: string } };
+  return typeof candidate.toDate === "function" && candidate.constructor?.name === "Timestamp";
+}
+
 export function encodeFirestoreValue(value: unknown): unknown {
-  if (value instanceof Timestamp) {
+  if (isFirestoreTimestamp(value)) {
     return { __type: "timestamp", value: value.toDate().toISOString() };
   }
   if (Array.isArray(value)) return value.map(encodeFirestoreValue);
@@ -51,14 +55,14 @@ export function decodeFirestoreValue(value: unknown): unknown {
       typeof record.value === "string" &&
       !Number.isNaN(Date.parse(record.value))
     ) {
-      return Timestamp.fromDate(new Date(record.value));
+      return new Date(record.value);
     }
     if (
       typeof record._seconds === "number" &&
       typeof record._nanoseconds === "number" &&
       Object.keys(record).every((key) => key === "_seconds" || key === "_nanoseconds")
     ) {
-      return new Timestamp(record._seconds, record._nanoseconds);
+      return new Date((record._seconds * 1000) + Math.round(record._nanoseconds / 1_000_000));
     }
     return Object.fromEntries(
       Object.entries(record).map(([key, child]) => [key, decodeFirestoreValue(child)]),

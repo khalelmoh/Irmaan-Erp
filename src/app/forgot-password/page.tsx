@@ -24,8 +24,8 @@ export default function ForgotPasswordPage() {
       await requestPasswordReset(email);
       setSent(true);
     } catch (e: unknown) {
-      // For privacy, real Firebase shouldn't reveal whether an account exists.
-      // The mock adapter does (to help debugging). Production: always show success.
+      // For privacy, production auth providers should not reveal whether an account exists.
+      // The mock adapter may expose more detail to help local debugging.
       setErr(e instanceof Error ? e.message : "Failed to send reset email");
     } finally {
       setLoading(false);
@@ -117,7 +117,8 @@ export default function ForgotPasswordPage() {
                 <div className="font-medium text-slate-700 mb-1">Demo mode note</div>
                 <div>
                   In this preview, no email is actually sent — the action is just recorded.
-                  When you wire up Firebase, real reset emails will be delivered via Firebase Auth.
+                  When you wire up live authentication, real reset emails will be delivered by
+                  the configured provider.
                 </div>
               </div>
             </form>

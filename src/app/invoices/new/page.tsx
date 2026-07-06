@@ -11,6 +11,7 @@ import { logActivity } from "@/lib/audit";
 import { useAuth } from "@/contexts/AuthContext";
 import { currency } from "@/lib/utils";
 import type { SalesOrder, Invoice } from "@/types";
+import { remainingToInvoice } from "@/lib/sales-order";
 
 export default function NewInvoicePage() {
   return (
@@ -125,6 +126,22 @@ function NewInvoiceInner() {
   }
 
   const sameCustomer = sourceDOs.every((d) => d.customerId === sourceDOs[0]?.customerId);
+  const sourceSORemaining = sourceSO ? remainingToInvoice(sourceSO) : [];
+
+  if (sourceSO && sourceSORemaining.length === 0) {
+    return (
+      <>
+        <PageHeader
+          title="Sales Order already invoiced"
+          description={`${sourceSO.soNumber} has no remaining quantity to invoice.`}
+        />
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          This sales order is already fully invoiced. Cancel the existing invoice first if you
+          need to reissue it.
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -149,6 +166,13 @@ function NewInvoiceInner() {
           const alreadyInvoiced = sourceDOs.find((d) => d.invoiceId);
           if (alreadyInvoiced) {
             throw new Error(`${alreadyInvoiced.doNumber} is already linked to an invoice`);
+          }
+          if (sourceSO && data.type !== "credit_note") {
+            const latestSO = await dataAdapter.salesOrders.get(sourceSO.id);
+            if (!latestSO) throw new Error("Sales order not found");
+            if (remainingToInvoice(latestSO).length === 0) {
+              throw new Error(`${latestSO.soNumber} is already fully invoiced`);
+            }
           }
           const customer = await dataAdapter.customers.get(data.customerId);
           if (!customer) throw new Error("Customer not found");
