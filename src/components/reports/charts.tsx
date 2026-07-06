@@ -21,6 +21,26 @@ const tooltipStyle = {
 
 interface SeriesPoint { [key: string]: string | number }
 
+function chartValue(value: string | number | undefined) {
+  const numberValue = typeof value === "number" ? value : Number(value ?? 0);
+  return Number.isFinite(numberValue) ? numberValue : 0;
+}
+
+function chartData(data: SeriesPoint[], seriesKeys: string[]) {
+  return data.map((point) => ({
+    ...point,
+    ...Object.fromEntries(seriesKeys.map((key) => [key, chartValue(point[key])])),
+  }));
+}
+
+function ChartFrame({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="w-full min-h-72" style={{ height: 320, minHeight: 288 }}>
+      {children}
+    </div>
+  );
+}
+
 export function TrendChart({
   data, xKey, series,
 }: {
@@ -28,10 +48,11 @@ export function TrendChart({
   xKey: string;
   series: Array<{ key: string; name: string; color?: string }>;
 }) {
+  const safeData = chartData(data, series.map((item) => item.key));
   return (
-    <div className="w-full h-72">
+    <ChartFrame>
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
+        <LineChart data={safeData} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
           <XAxis dataKey={xKey} tick={{ fontSize: 11, fill: "#64748b" }} />
           <YAxis tick={{ fontSize: 11, fill: "#64748b" }} tickFormatter={(v) => `$${(v as number).toLocaleString()}`} />
@@ -51,7 +72,7 @@ export function TrendChart({
           ))}
         </LineChart>
       </ResponsiveContainer>
-    </div>
+    </ChartFrame>
   );
 }
 
@@ -63,19 +84,20 @@ export function BarSeriesChart({
   series: Array<{ key: string; name: string; color?: string }>;
   horizontal?: boolean;
 }) {
+  const safeData = chartData(data, series.map((item) => item.key));
   return (
-    <div className="w-full h-72">
+    <ChartFrame>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart
-          data={data}
+          data={safeData}
           layout={horizontal ? "vertical" : "horizontal"}
-          margin={{ top: 8, right: 16, bottom: 8, left: horizontal ? 100 : 0 }}
+          margin={{ top: 8, right: 24, bottom: 8, left: horizontal ? 16 : 0 }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
           {horizontal ? (
             <>
               <XAxis type="number" tick={{ fontSize: 11, fill: "#64748b" }} tickFormatter={(v) => `$${(v as number).toLocaleString()}`} />
-              <YAxis type="category" dataKey={xKey} tick={{ fontSize: 11, fill: "#64748b" }} width={140} />
+              <YAxis type="category" dataKey={xKey} tick={{ fontSize: 11, fill: "#64748b" }} width={170} interval={0} />
             </>
           ) : (
             <>
@@ -91,12 +113,13 @@ export function BarSeriesChart({
               dataKey={s.key}
               name={s.name}
               fill={s.color ?? PALETTE[i % PALETTE.length]}
-              radius={[4, 4, 0, 0]}
+              minPointSize={2}
+              radius={horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]}
             />
           ))}
         </BarChart>
       </ResponsiveContainer>
-    </div>
+    </ChartFrame>
   );
 }
 
@@ -107,7 +130,7 @@ export function DonutChart({
 }) {
   const total = data.reduce((s, d) => s + d.value, 0);
   return (
-    <div className="w-full h-72 relative">
+    <div className="w-full min-h-72 relative" style={{ height: 320, minHeight: 288 }}>
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
           <Pie

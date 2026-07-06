@@ -1,5 +1,29 @@
 # Maintenance Scripts
 
+## Supabase Setup
+
+These scripts use `.env.local` and require:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_ADMIN_EMAIL=
+SUPABASE_ADMIN_PASSWORD=
+SUPABASE_ADMIN_NAME=Admin User
+```
+
+Create or repair the first admin account:
+
+```bash
+npm run supabase:create-admin
+```
+
+Check that migrations and key RPCs are available:
+
+```bash
+npm run supabase:smoke
+```
+
 ## Backup & Restore
 
 ### One-time setup
